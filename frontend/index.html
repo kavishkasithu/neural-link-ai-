@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Neural Trading AI — Liquid Glass Cortex & TradingView Vision Engine</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./css/styles.css" />
+</head>
+<body>
+
+  <!-- 1. MANDATORY LOGIN GATE -->
+  <div id="boot-intro-overlay" class="fixed inset-0 z-50 bg-[#010509]/92 backdrop-blur-2xl flex flex-col items-center justify-center p-4 transition-opacity duration-500">
+    <div class="liquid-glass-tab w-full max-w-md rounded-2xl p-6 space-y-5">
+      <div class="flex flex-col items-center text-center space-y-2">
+        <div class="relative w-16 h-16 flex items-center justify-center">
+          <div class="boot-ring-1 absolute inset-0 rounded-full border-2 border-dashed border-cyan-400/70"></div>
+          <div class="boot-ring-2 absolute inset-2 rounded-full border border-fuchsia-400/50"></div>
+          <span class="text-xl">⚡</span>
+        </div>
+        <h1 class="font-mono-tech text-lg font-extrabold bg-gradient-to-r from-cyan-300 via-fuchsia-300 to-emerald-300 bg-clip-text text-transparent">
+          NEURAL TRADING AI PRO
+        </h1>
+        <p class="font-mono-tech text-[11px] text-cyan-200/75">Full-Stack Vision Signal & Liquid Glass Platform</p>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2 p-1 rounded-xl bg-slate-950/80 border border-cyan-500/25 font-mono-tech text-xs">
+        <button id="tab-login-mode-btn" type="button" class="py-2 rounded-lg font-bold bg-cyan-500/25 text-cyan-200 border border-cyan-400/50">🔑 LOGIN</button>
+        <button id="tab-signup-mode-btn" type="button" class="py-2 rounded-lg font-semibold text-cyan-200/60 hover:text-cyan-200">📝 SIGN UP</button>
+      </div>
+
+      <form id="user-auth-form" class="space-y-3">
+        <div id="user-signup-name-wrap" class="hidden">
+          <label class="block text-[10px] font-mono-tech uppercase text-cyan-300/85 mb-1">Full Name</label>
+          <input id="user-name-input" type="text" placeholder="Trader Name" class="neural-input w-full rounded-xl px-3.5 py-2.5 text-xs font-mono-tech" />
+        </div>
+        <div>
+          <label class="block text-[10px] font-mono-tech uppercase text-cyan-300/85 mb-1">Username or Email</label>
+          <input id="user-email-input" type="text" required autocomplete="off" placeholder="Username or Email" class="neural-input w-full rounded-xl px-3.5 py-2.5 text-xs font-mono-tech" />
+        </div>
+        <div>
+          <label class="block text-[10px] font-mono-tech uppercase text-cyan-300/85 mb-1">Password</label>
+          <input id="user-password-input" type="password" required autocomplete="off" placeholder="Password" class="neural-input w-full rounded-xl px-3.5 py-2.5 text-xs font-mono-tech" />
+        </div>
+
+        <div id="user-auth-error-msg" class="hidden text-xs font-mono-tech text-rose-300 bg-rose-950/75 border border-rose-500/50 rounded-xl px-3 py-2"></div>
+        <div id="user-auth-success-msg" class="hidden text-xs font-mono-tech text-emerald-300 bg-emerald-950/75 border border-emerald-500/50 rounded-xl px-3 py-2"></div>
+
+        <button id="user-submit-btn" type="submit" class="neural-btn-primary w-full py-3 rounded-xl font-mono-tech text-xs font-bold uppercase tracking-wider">
+          LOGIN TO NEURAL PLATFORM ⚡
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- 2. FULLSCREEN INTERACTIVE NEURAL CANVAS -->
+  <canvas id="neural-canvas"></canvas>
+
+  <!-- 3. PROTECTED WEBSITE INTERFACE -->
+  <div id="protected-website-ui" class="hidden">
+
+    <!-- TOP-LEFT MOVABLE LIQUID GLASS HUD TAB -->
+    <div id="hud-wrapper-tab" class="fixed top-4 left-4 z-20 rounded-2xl p-2.5 pointer-events-auto w-[340px]">
+      <div class="universal-drag-bar flex items-center justify-between text-[9px] font-mono-tech text-cyan-200/75 pb-1 mb-1.5 border-b border-white/15">
+        <span class="font-bold text-cyan-300">⠿ HUD CORTEX</span>
+        <div class="flex gap-1">
+          <button type="button" class="tab-reset-pos-btn px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-200 text-[9px]">📌</button>
+          <button type="button" class="tab-minimize-btn px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-100 font-bold text-[10px]">▼</button>
+        </div>
+      </div>
+      <div id="hud-tab-body">
+        <div id="hud-cortex-card" class="rounded-xl px-3 py-2 flex items-center gap-2.5">
+          <span class="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse"></span>
+          <div>
+            <div class="flex items-center gap-1.5">
+              <span id="hud-mode-title" class="text-[11px] font-mono-tech uppercase text-cyan-300 font-bold">RGB NEURAL CORTEX</span>
+              <span id="hud-color-badge" class="text-[9px] font-mono-tech px-1.5 py-0.5 rounded bg-fuchsia-500/20 text-fuchsia-200 border border-fuchsia-400/40">RGB SPECTRUM</span>
+            </div>
+            <div class="text-[10px] text-cyan-100/70">Drag any Liquid Glass Tab • Paste TV Chart (Ctrl+V)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TOP-CENTER SIGNAL ALERT BANNER (MOVABLE) -->
+    <div id="signal-alert-banner" class="fixed top-4 left-1/2 -translate-x-1/2 z-30 hidden pointer-events-auto w-[92vw] max-w-lg rounded-2xl">
+      <div id="signal-alert-inner" class="rounded-2xl px-4 py-3 flex items-center justify-between gap-3">
+        <div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <span id="banner-title-text" class="font-mono-tech text-xs font-extrabold text-emerald-200 uppercase">AI SIGNAL</span>
+            <span id="banner-signal-side" class="font-mono-tech text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-600 text-white">BUY / LONG</span>
+            <span id="banner-countdown-pill" class="font-mono-tech text-[10px] px-2 py-0.5 rounded bg-black/60 text-cyan-200">RGB IN 10s</span>
+          </div>
+          <p id="banner-signal-summary" class="font-mono-tech text-[11px] text-white/95 mt-0.5"></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- TOP-RIGHT ACTION BAR -->
+    <div class="fixed top-4 right-4 z-30 flex flex-wrap items-center gap-2 pointer-events-auto">
+      <button id="quick-open-vision-btn" type="button" class="neural-btn-vision px-3.5 py-2 rounded-xl font-mono-tech text-xs font-bold flex items-center gap-1.5">
+        <span>📷</span><span>TV CHART AI</span>
+      </button>
+      <button id="quick-fire-signal-btn" type="button" class="neural-btn-signal px-3.5 py-2 rounded-xl font-mono-tech text-xs font-bold flex items-center gap-1.5">
+        <span>⚡</span><span>NEAR SIGNAL</span>
+      </button>
+      <div id="user-session-pill" class="liquid-glass-tab px-3 py-1.5 rounded-xl flex items-center gap-2 font-mono-tech text-[11px]">
+        <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+        <span id="user-session-email" class="text-emerald-200 font-semibold">USER</span>
+        <button id="user-logout-btn" type="button" class="px-2 py-0.5 rounded-lg bg-rose-500/25 text-rose-200 border border-rose-400/40 text-[10px] font-bold">LOGOUT 🔒</button>
+      </div>
+      <button id="admin-access-btn" type="button" class="hidden neural-btn-primary px-3 py-2 rounded-xl font-mono-tech text-xs font-bold items-center gap-1.5">
+        <span>🛡️</span><span>ADMIN</span>
+      </button>
+    </div>
+
+    <!-- TAB 1: MOVABLE LIQUID GLASS BTC TREND & NEAR-ENTRY RADAR -->
+    <div id="btc-trend-summary-widget" class="fixed top-24 left-4 z-20 w-[92vw] sm:w-[400px] rounded-2xl p-3.5 pointer-events-auto">
+      <div class="universal-drag-bar flex items-center justify-between text-[9px] font-mono-tech text-cyan-200/75 pb-1.5 mb-2 border-b border-white/15">
+        <span class="font-bold text-amber-300">⠿ BTC TREND & NEAR-ENTRY RADAR</span>
+        <div class="flex gap-1">
+          <button type="button" class="tab-reset-pos-btn px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-200 text-[9px]">📌</button>
+          <button type="button" class="tab-minimize-btn px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-100 font-bold text-[10px]">▼</button>
+        </div>
+      </div>
+      <div id="btc-summary-body" class="space-y-2 font-mono-tech">
+        <div class="grid grid-cols-2 gap-2 text-[10px]">
+          <div class="p-2 rounded-xl bg-slate-950/80 border border-cyan-500/25">
+            <div class="text-[8px] text-cyan-200/60">BTC LIVE PRICE</div>
+            <div id="btc-sum-price" class="text-xs font-bold text-white">$78,428.95</div>
+            <div id="btc-sum-change" class="text-[9px] text-emerald-400">+1.28% (24h)</div>
+          </div>
+          <div class="p-2 rounded-xl bg-slate-950/80 border border-fuchsia-500/30">
+            <div class="text-[8px] text-fuchsia-200/70">RADAR FILTER</div>
+            <div class="text-xs font-bold text-emerald-300">NEAR-ENTRY ONLY</div>
+            <div class="text-[9px] text-cyan-300/70">Far Entries Removed</div>
+          </div>
+        </div>
+        <div id="live-news-radar-list" class="max-h-40 overflow-y-auto neural-scroll space-y-1.5 pr-1 text-[10px]"></div>
+      </div>
+    </div>
+
+    <!-- TAB 2: MOVABLE LIQUID GLASS TRADINGVIEW CHART AI VISION ANALYZER (FOREX / CRYPTO / STOCKS) -->
+    <div id="tv-chart-vision-widget" class="fixed top-24 left-[440px] z-20 w-[92vw] sm:w-[410px] rounded-2xl p-3.5 pointer-events-auto">
+      <div class="universal-drag-bar flex items-center justify-between text-[9px] font-mono-tech text-fuchsia-200/90 pb-1.5 mb-2 border-b border-white/15">
+        <span class="font-bold flex items-center gap-1.5"><span>⠿</span><span>📷 TV CHART AI VISION (FOREX • CRYPTO • STOCK)</span></span>
+        <div class="flex gap-1">
+          <button type="button" class="tab-reset-pos-btn px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-200 text-[9px]">📌</button>
+          <button type="button" class="tab-minimize-btn px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-100 font-bold text-[10px]">▼</button>
+        </div>
+      </div>
+
+      <div id="vision-widget-body" class="space-y-2.5 font-mono-tech">
+        <!-- Market Hint & Style -->
+        <div class="grid grid-cols-2 gap-2 text-[10px]">
+          <select id="vision-market-hint" class="neural-input rounded-xl px-2.5 py-1.5 text-[10px] font-bold">
+            <option value="AUTO DETECT">🔍 Auto Detect Pair</option>
+            <option value="FOREX">💱 Forex (EURUSD, GBPJPY...)</option>
+            <option value="CRYPTO">🪙 Crypto (BTC, ETH, SOL...)</option>
+            <option value="STOCK">📈 Stocks (NVDA, AAPL, TSLA...)</option>
+            <option value="COMMODITY/INDEX">🥇 Gold / NAS100 / US30</option>
+          </select>
+          <select id="vision-trade-style" class="neural-input rounded-xl px-2.5 py-1.5 text-[10px] font-bold">
+            <option value="Intraday Sniper">🎯 Sniper Near-Entry</option>
+            <option value="Scalping 1m-15m">⚡ Scalp (1m - 15m)</option>
+            <option value="Swing 1H-4H">🌊 Swing (1H - 4H)</option>
+          </select>
+        </div>
+
+        <!-- Upload / Drag-Drop / Ctrl+V Zone -->
+        <div id="vision-dropzone" class="vision-dropzone rounded-xl p-3 text-center cursor-pointer relative">
+          <input id="vision-file-input" type="file" accept="image/*" class="hidden" />
+          <div id="vision-drop-placeholder" class="space-y-1 py-2">
+            <div class="text-xl">📸</div>
+            <div class="text-[11px] font-bold text-cyan-200">Drop TradingView Chart Screenshot Here</div>
+            <div class="text-[9px] text-cyan-200/65">Click to Upload OR Press <span class="text-fuchsia-300 font-bold">Ctrl + V</span> anywhere</div>
+          </div>
+          <div id="vision-preview-wrap" class="hidden relative">
+            <img id="vision-preview-img" src="" alt="Chart Preview" class="w-full max-h-36 object-cover rounded-lg border border-cyan-400/40" />
+            <button id="vision-clear-img-btn" type="button" class="absolute top-1.5 right-1.5 px-2 py-0.5 rounded-lg bg-rose-600/90 text-white text-[9px] font-bold">✕ CLEAR</button>
+          </div>
+        </div>
+
+        <button id="vision-analyze-btn" type="button" class="neural-btn-vision w-full py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5">
+          <span>🧠</span><span>ANALYZE CHART & GET SIGNAL</span>
+        </button>
+
+        <div id="vision-status-text" class="hidden text-[10px] text-amber-300 bg-slate-950/85 border border-amber-400/30 rounded-xl p-2 text-center"></div>
+
+        <!-- AI Recognized Pair & Signal Result Box -->
+        <div id="vision-result-box" class="hidden p-2.5 rounded-xl bg-slate-950/90 border border-fuchsia-400/45 space-y-2 text-[10px]">
+          <div class="flex items-center justify-between gap-1 flex-wrap">
+            <div class="flex items-center gap-1.5">
+              <span id="vis-pair" class="text-sm font-extrabold text-white">XAU/USD</span>
+              <span id="vis-class-badge" class="text-[8px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-200 border border-cyan-400/35">FOREX • 15m</span>
+            </div>
+            <span id="vis-dir-badge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-600 text-white">BUY / LONG</span>
+          </div>
+
+          <div class="flex items-center justify-between">
+            <span id="vis-proximity-badge" class="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold">🎯 NEAR ENTRY</span>
+            <span id="vis-rr" class="text-[9px] text-amber-300 font-bold">R:R 1:2.5</span>
+          </div>
+
+          <div class="grid grid-cols-4 gap-1.5 text-center pt-1 border-t border-cyan-500/15">
+            <div class="p-1 rounded bg-black/50"><div class="text-[8px] text-cyan-200/60">ENTRY</div><div id="vis-entry" class="font-bold text-cyan-100">-</div></div>
+            <div class="p-1 rounded bg-black/50"><div class="text-[8px] text-emerald-300/70">TP 1</div><div id="vis-tp1" class="font-bold text-emerald-300">-</div></div>
+            <div class="p-1 rounded bg-black/50"><div class="text-[8px] text-emerald-300/70">TP 2</div><div id="vis-tp2" class="font-bold text-emerald-400">-</div></div>
+            <div class="p-1 rounded bg-black/50"><div class="text-[8px] text-rose-300/70">STOP LOSS</div><div id="vis-sl" class="font-bold text-rose-300">-</div></div>
+          </div>
+
+          <p id="vis-reasoning" class="text-[9.5px] text-cyan-100/85 leading-relaxed pt-1 border-t border-cyan-500/15"></p>
+
+          <div class="grid grid-cols-3 gap-1.5 pt-1">
+            <button id="vision-log-pnl-btn" type="button" class="py-1.5 rounded-lg bg-emerald-500/25 hover:bg-emerald-500/45 text-emerald-200 border border-emerald-400/50 text-[9px] font-bold">+ LOG P&L</button>
+            <button id="vision-send-rr-btn" type="button" class="py-1.5 rounded-lg bg-amber-500/25 hover:bg-amber-500/45 text-amber-200 border border-amber-400/50 text-[9px] font-bold">⚖️ RR CALC</button>
+            <button id="vision-copy-pair-btn" type="button" class="py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/40 text-cyan-200 border border-cyan-400/40 text-[9px] font-bold">📋 COPY</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: MOVABLE LIQUID GLASS TRADING P&L HUB (DAILY RESET + MONTHLY PNL + ALL SUB-TABS MINIMIZABLE) -->
+    <div id="daily-trading-summary-widget" class="fixed top-16 right-4 z-20 w-[94vw] sm:w-[415px] rounded-2xl p-3.5 pointer-events-auto">
+      <div class="universal-drag-bar flex items-center justify-between text-[9px] font-mono-tech text-cyan-200/80 pb-1.5 mb-2 border-b border-white/15">
+        <span class="font-bold text-cyan-300">⠿ TRADING P&L & MONTHLY REPORT HUB</span>
+        <div class="flex items-center gap-1">
+          <button id="pnl-collapse-all-subtabs-btn" type="button" class="px-1.5 py-0.5 rounded bg-fuchsia-500/20 text-fuchsia-200 border border-fuchsia-400/35 text-[8px] font-bold">MINIMIZE SUB-TABS</button>
+          <button id="pnl-reset-pos-btn" type="button" class="px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-200 text-[9px]">📌</button>
+          <button id="toggle-daily-summary-btn" type="button" class="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-100 font-bold text-[10px]">▼</button>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between pb-2 mb-2 border-b border-cyan-500/20 font-mono-tech">
+        <div>
+          <div class="flex items-center gap-1.5">
+            <span class="text-xs font-extrabold text-emerald-300">DAILY & MONTHLY P&L</span>
+            <span id="daily-reset-countdown" class="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-200 border border-cyan-400/40 font-bold">RESET 00:00:00</span>
+          </div>
+          <div class="text-[9px] text-cyan-200/65">Date: <span id="daily-summary-date"></span></div>
+        </div>
+        <button id="manual-reset-daily-btn" type="button" class="px-2 py-1 rounded-lg bg-rose-500/20 text-rose-200 border border-rose-400/40 text-[9px] font-bold">RESET DAY ↻</button>
+      </div>
+
+      <div id="daily-summary-body" class="space-y-2 font-mono-tech max-h-[72vh] overflow-y-auto neural-scroll pr-0.5">
+        <!-- SUB-TAB 1: NEAR-ENTRY FILTER -->
+        <div class="liquid-subtab overflow-hidden">
+          <div data-subtab-toggle="subtab-near-filter" class="liquid-subtab-header px-3 py-2 flex justify-between items-center">
+            <span class="text-[10px] font-bold text-cyan-200">🎯 1. NEAR-ENTRY SNIPER FILTER</span>
+            <span class="subtab-arrow text-[10px] text-cyan-300 font-bold">▼</span>
+          </div>
+          <div id="subtab-near-filter" class="px-3 pb-2.5 pt-1 border-t border-cyan-500/15 space-y-1.5">
+            <div class="flex justify-between items-center text-[10px]">
+              <span class="text-cyan-200/80">Max Entry Dist:</span>
+              <select id="near-entry-threshold-select" class="neural-input rounded-lg px-2 py-0.5 text-[10px] font-bold text-emerald-300">
+                <option value="0.15">≤ 0.15% (Ultra Tight)</option>
+                <option value="0.25" selected>≤ 0.25% (Sniper)</option>
+                <option value="0.40">≤ 0.40% (Standard)</option>
+              </select>
+            </div>
+            <div class="flex justify-between items-center text-[9px] text-cyan-200/75">
+              <span id="near-entry-count-label">Scanning...</span>
+              <label class="flex items-center gap-1 cursor-pointer text-amber-300 font-semibold">
+                <input id="hide-far-dots-checkbox" type="checkbox" checked class="accent-emerald-400 w-3 h-3" />
+                <span>Hide Far Entries</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- SUB-TAB 2: DAILY SUMMARY -->
+        <div class="liquid-subtab overflow-hidden">
+          <div data-subtab-toggle="subtab-daily-pnl" class="liquid-subtab-header px-3 py-2 flex justify-between items-center">
+            <span class="text-[10px] font-bold text-emerald-300">📅 2. DAILY SUMMARY (AUTO-RESET)</span>
+            <span class="subtab-arrow text-[10px] text-emerald-300 font-bold">▼</span>
+          </div>
+          <div id="subtab-daily-pnl" class="px-2.5 pb-2.5 pt-1.5 border-t border-cyan-500/15 grid grid-cols-4 gap-1.5 text-center text-[10px]">
+            <div class="p-1.5 rounded-xl bg-slate-950/80 border border-cyan-500/25"><div class="text-[8px] text-cyan-200/60">TODAY</div><div id="ds-total-trades" class="text-xs font-extrabold text-white">0</div><div id="ds-open-trades" class="text-[8px] text-cyan-300">0 Near</div></div>
+            <div class="p-1.5 rounded-xl bg-slate-950/80 border border-emerald-500/30"><div class="text-[8px] text-emerald-200/70">W / L</div><div id="ds-win-loss" class="text-xs font-extrabold text-emerald-300">0W / 0L</div><div id="ds-buy-sell" class="text-[8px] text-cyan-200/60">0B • 0S</div></div>
+            <div class="p-1.5 rounded-xl bg-slate-950/80 border border-fuchsia-500/30"><div class="text-[8px] text-fuchsia-200/70">WIN %</div><div id="ds-win-rate" class="text-xs font-extrabold text-fuchsia-300">0%</div><div class="text-[8px] text-cyan-200/60">Acc.</div></div>
+            <div class="p-1.5 rounded-xl bg-slate-950/80 border border-amber-500/30"><div class="text-[8px] text-amber-200/70">DAY P&L</div><div id="ds-net-pnl" class="text-xs font-extrabold text-emerald-400">+0.00%</div><div id="ds-net-usd" class="text-[8px] text-amber-300">$0.00</div></div>
+          </div>
+        </div>
+
+        <!-- SUB-TAB 3: MONTHLY P&L REPORT -->
+        <div class="liquid-subtab overflow-hidden border-fuchsia-400/35">
+          <div data-subtab-toggle="subtab-monthly-pnl" class="liquid-subtab-header px-3 py-2 flex justify-between items-center">
+            <div class="flex items-center gap-1.5">
+              <span class="text-[10px] font-bold text-fuchsia-300">📊 3. MONTHLY P&L REPORT</span>
+              <span id="ms-month-badge" class="text-[8px] px-1.5 py-0.5 rounded bg-fuchsia-500/20 text-fuchsia-200 font-bold"></span>
+            </div>
+            <span class="subtab-arrow text-[10px] text-fuchsia-300 font-bold">▼</span>
+          </div>
+          <div id="subtab-monthly-pnl" class="px-2.5 pb-2.5 pt-1.5 border-t border-cyan-500/15 space-y-2">
+            <div class="grid grid-cols-4 gap-1.5 text-center text-[10px]">
+              <div class="p-1.5 rounded-xl bg-slate-950/80 border border-cyan-500/25"><div class="text-[8px] text-cyan-200/60">TRADES</div><div id="ms-total-trades" class="text-xs font-extrabold text-white">0</div><div id="ms-active-days" class="text-[8px] text-cyan-300">1 Day</div></div>
+              <div class="p-1.5 rounded-xl bg-slate-950/80 border border-emerald-500/30"><div class="text-[8px] text-emerald-200/70">M. W/L</div><div id="ms-win-loss" class="text-xs font-extrabold text-emerald-300">0W/0L</div><div id="ms-win-rate" class="text-[8px] text-fuchsia-300">0% WR</div></div>
+              <div class="p-1.5 rounded-xl bg-slate-950/80 border border-amber-500/30"><div class="text-[8px] text-amber-200/70">BEST DAY</div><div id="ms-best-day" class="text-xs font-extrabold text-emerald-300">+0.00%</div><div class="text-[8px] text-cyan-200/60">Peak</div></div>
+              <div class="p-1.5 rounded-xl bg-slate-950/80 border border-fuchsia-500/35"><div class="text-[8px] text-fuchsia-200/70">M. P&L</div><div id="ms-net-pnl" class="text-xs font-extrabold text-emerald-400">+0.00%</div><div id="ms-net-usd" class="text-[8px] text-amber-300">$0.00</div></div>
+            </div>
+            <div class="flex justify-between text-[8px] text-cyan-200/70 px-1">
+              <span>DAILY BREAKDOWN</span>
+              <button id="ms-reset-month-btn" type="button" class="text-rose-300 hover:underline font-bold">CLEAR MONTH</button>
+            </div>
+            <div id="ms-days-breakdown-list" class="max-h-24 overflow-y-auto neural-scroll space-y-1 pr-1 text-[9px]"></div>
+          </div>
+        </div>
+
+        <!-- SUB-TAB 4: NEAR-ENTRY ACTIVE & DAILY LOG -->
+        <div class="liquid-subtab overflow-hidden">
+          <div data-subtab-toggle="subtab-trade-log" class="liquid-subtab-header px-3 py-2 flex justify-between items-center">
+            <span class="text-[10px] font-bold text-amber-300">⚡ 4. NEAR-ENTRY & TRADE LOG</span>
+            <span class="subtab-arrow text-[10px] text-amber-300 font-bold">▼</span>
+          </div>
+          <div id="subtab-trade-log" class="px-2.5 pb-2.5 pt-1.5 border-t border-cyan-500/15">
+            <div id="ds-trades-log-list" class="max-h-32 overflow-y-auto neural-scroll space-y-1.5 pr-1 text-[10px]"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 4: MOVABLE LIQUID GLASS SIGNAL TERMINAL -->
+    <div id="asset-terminal-card" class="fixed bottom-4 left-4 z-20 w-[92vw] sm:w-[400px] rounded-2xl p-3.5 pointer-events-auto">
+      <div class="universal-drag-bar flex items-center justify-between text-[9px] font-mono-tech text-cyan-200/75 pb-1.5 mb-2 border-b border-white/15">
+        <span class="font-bold text-cyan-300">⠿ AI SIGNAL TERMINAL</span>
+        <div class="flex gap-1">
+          <button id="reset-card-pos-btn" type="button" class="px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-200 text-[9px]">📌</button>
+          <button id="term-minimize-tab-btn" type="button" class="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-100 font-bold text-[10px]">▼</button>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between pb-2 mb-2 border-b border-cyan-500/20">
+        <div class="flex items-center gap-2">
+          <h2 id="term-symbol" class="font-mono-tech text-base font-extrabold text-white">BTC/USDT</h2>
+          <button id="term-copy-symbol-btn" type="button" class="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-200 text-[9px] font-bold">📋 COPY</button>
+        </div>
+        <div class="text-right font-mono-tech">
+          <div id="term-price" class="text-sm font-bold text-emerald-300">$78,428.95</div>
+          <div id="term-change" class="text-[10px] text-emerald-400">+1.28% (24h)</div>
+        </div>
+      </div>
+
+      <div id="term-collapsible-body" class="space-y-2.5 font-mono-tech">
+        <div id="term-market-update-box" class="rounded-xl p-2.5 bg-slate-950/85 border border-cyan-500/25 text-[10px] text-cyan-100/80">
+          Live Market Ready. Click <strong class="text-cyan-300">GENERATE SIGNAL</strong> for Near-Entry Crypto setups or upload any Forex/Crypto/Stock TradingView chart screenshot!
+        </div>
+
+        <div id="term-signal-box" class="hidden rounded-xl p-2.5 bg-slate-950/90 border border-cyan-500/30 space-y-1.5 text-[10px]">
+          <div class="flex justify-between items-center">
+            <span class="text-cyan-300/80">NEAR-ENTRY SIGNAL:</span>
+            <span id="sig-direction-badge" class="px-2 py-0.5 rounded font-bold bg-emerald-600 text-white">BUY / LONG</span>
+          </div>
+          <div class="grid grid-cols-4 gap-1.5 text-center pt-1 border-t border-cyan-500/15">
+            <div><div class="text-[8px] text-cyan-200/50">ENTRY</div><div id="sig-entry" class="font-bold text-white">-</div></div>
+            <div><div class="text-[8px] text-emerald-300/60">TP1</div><div id="sig-tp1" class="font-bold text-emerald-300">-</div></div>
+            <div><div class="text-[8px] text-emerald-300/60">TP2</div><div id="sig-tp2" class="font-bold text-emerald-400">-</div></div>
+            <div><div class="text-[8px] text-rose-300/60">SL</div><div id="sig-sl" class="font-bold text-rose-300">-</div></div>
+          </div>
+          <p id="sig-reasoning" class="text-[9.5px] text-cyan-100/80 pt-1 border-t border-cyan-500/15"></p>
+        </div>
+
+        <div class="flex gap-2">
+          <button id="term-generate-signal-btn" type="button" class="neural-btn-signal flex-1 py-2 rounded-xl text-xs font-bold">⚡ GENERATE SIGNAL</button>
+          <button id="term-open-chart-btn" type="button" class="px-3 py-2 rounded-xl bg-amber-500/20 text-amber-200 border border-amber-400/50 text-xs font-bold">📈 CHART</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- LIVE CANDLESTICK CHART MODAL -->
+    <div id="coin-chart-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/80 backdrop-blur-md p-4">
+      <div class="liquid-glass-tab w-full max-w-3xl rounded-2xl p-4 space-y-3">
+        <div class="flex items-center justify-between border-b border-cyan-500/20 pb-2">
+          <div class="flex items-center gap-2 font-mono-tech">
+            <h3 id="chart-modal-symbol" class="text-base font-extrabold text-white">BTC/USDT</h3>
+            <span id="chart-modal-price" class="text-sm font-bold text-cyan-300">$78,428.95</span>
+          </div>
+          <button id="close-chart-modal-btn" type="button" class="px-2.5 py-1 rounded-lg bg-rose-500/25 text-rose-200 font-bold text-xs">✕</button>
+        </div>
+        <div class="w-full h-72 bg-[#020910] rounded-xl border border-cyan-500/25 overflow-hidden">
+          <canvas id="klines-chart-canvas" class="w-full h-full block"></canvas>
+        </div>
+        <div class="flex flex-wrap justify-end gap-2 font-mono-tech text-xs">
+          <button id="open-rr-calc-btn" type="button" class="px-3 py-2 rounded-xl bg-emerald-500/25 text-emerald-200 border border-emerald-400/50 font-bold">⚖️ RR CALCULATOR</button>
+          <a id="chart-binance-link" href="#" target="_blank" class="px-3 py-2 rounded-xl bg-amber-500/20 text-amber-200 border border-amber-400/50 font-bold">BINANCE ↗</a>
+          <a id="chart-tradingview-link" href="#" target="_blank" class="neural-btn-primary px-3 py-2 rounded-xl font-bold">TRADINGVIEW ↗</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- RR CALCULATOR MODAL -->
+    <div id="rr-calculator-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/85 backdrop-blur-xl p-4">
+      <div class="liquid-glass-tab w-full max-w-lg rounded-3xl p-6 space-y-3 font-mono-tech relative">
+        <button id="close-rr-calc-modal-btn" type="button" class="absolute top-4 right-4 px-2.5 py-1 rounded-lg bg-rose-500/25 text-rose-200 text-xs font-bold">✕ CLOSE</button>
+        <h1 class="rr-rgb-title">THE DOPAMINE CONTROLLER</h1>
+        <div id="rr-pair-label" class="text-center text-xs font-bold text-emerald-300">BTC/USDT (CRYPTO)</div>
+
+        <div class="grid grid-cols-2 gap-2.5 text-xs">
+          <div><label class="text-[10px] text-cyan-200/75">Entry Price</label><input id="rr-entry-price" type="number" step="any" value="78428.95" class="neural-input w-full rounded-xl p-2.5 mt-1" /></div>
+          <div><label class="text-[10px] text-cyan-200/75">Stop Loss Price</label><input id="rr-sl-price" type="number" step="any" value="77640.00" class="neural-input w-full rounded-xl p-2.5 mt-1" /></div>
+          <div><label class="text-[10px] text-cyan-200/75">Capital ($)</label><input id="rr-capital" type="number" step="any" value="100" class="neural-input w-full rounded-xl p-2.5 mt-1" /></div>
+          <div><label class="text-[10px] text-cyan-200/75">Risk (%)</label><input id="rr-risk-pct" type="number" step="0.1" value="2" class="neural-input w-full rounded-xl p-2.5 mt-1" /></div>
+          <div><label class="text-[10px] text-cyan-200/75">RR Ratio (1:X)</label><input id="rr-ratio-input" type="number" step="0.5" value="2" class="neural-input w-full rounded-xl p-2.5 mt-1" /></div>
+          <div><label class="text-[10px] text-cyan-200/75">Leverage (x)</label><input id="rr-leverage" type="number" step="1" value="10" class="neural-input w-full rounded-xl p-2.5 mt-1" /></div>
+        </div>
+
+        <div id="rr-result-box" class="p-3.5 rounded-2xl bg-slate-950/90 border border-emerald-500/35 text-xs leading-relaxed"></div>
+      </div>
+    </div>
+
+    <!-- ADMIN PANEL DRAWER -->
+    <aside id="admin-panel" class="fixed top-0 right-0 h-screen w-full sm:w-[400px] z-40 neural-glass hidden flex-col transition-transform duration-300 translate-x-full p-4 space-y-4">
+      <div class="flex items-center justify-between border-b border-cyan-500/20 pb-3 font-mono-tech">
+        <h2 class="text-sm font-bold text-cyan-200">🛡️ NEURAL ADMIN COMMAND</h2>
+        <button id="collapse-admin-btn" type="button" class="px-2.5 py-1 rounded-lg bg-cyan-500/20 text-cyan-200 text-xs font-bold">HIDE</button>
+      </div>
+      <div class="grid grid-cols-12 gap-1.5">
+        <input id="admin-new-user-email" type="text" placeholder="Username" class="neural-input col-span-5 rounded-xl px-2.5 py-2 text-xs font-mono-tech" />
+        <input id="admin-new-user-pass" type="text" placeholder="Password" class="neural-input col-span-4 rounded-xl px-2.5 py-2 text-xs font-mono-tech" />
+        <button id="admin-create-user-btn" type="button" class="neural-btn-primary col-span-3 rounded-xl font-mono-tech text-[10px] font-bold">+ ADD</button>
+      </div>
+      <div id="admin-users-list" class="flex-1 overflow-y-auto neural-scroll space-y-2 font-mono-tech"></div>
+    </aside>
+
+  </div>
+
+  <!-- TOAST -->
+  <div id="neural-toast" class="fixed bottom-5 right-5 z-50 opacity-0 pointer-events-none translate-y-2 transition-all duration-300 liquid-glass-tab px-4 py-3 rounded-xl flex items-center gap-2.5">
+    <span id="toast-icon">⚡</span>
+    <span id="toast-text" class="font-mono-tech text-xs text-cyan-100">Ready</span>
+  </div>
+
+  <!-- MODULAR FRONTEND SCRIPTS -->
+  <script src="./js/config.js"></script>
+  <script src="./js/uiDragGlass.js"></script>
+  <script src="./js/neuralCanvas.js"></script>
+  <script src="./js/pnlManager.js"></script>
+  <script src="./js/chartVision.js"></script>
+  <script src="./js/app.js"></script>
+</body>
+</html>
