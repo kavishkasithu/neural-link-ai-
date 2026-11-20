@@ -1,3 +1,6 @@
+const GEMINI_HOST = 'generativelanguage.googleapis.com';
+const OPENAI_HOST = 'api.openai.com';
+
 const SYSTEM_PROMPT = `You are an elite institutional Price Action & Smart Money Concepts (SMC) chart analyst.
 Analyze the uploaded TradingView chart screenshot carefully.
 
@@ -61,9 +64,8 @@ function cleanJsonResponse(text) {
 
 async function discoverGeminiModels(apiKey) {
   try {
-    const resp = await fetch(
-      `[https://generativelanguage.googleapis.com/v1beta/models?key=$](https://generativelanguage.googleapis.com/v1beta/models?key=$){encodeURIComponent(apiKey)}`
-    );
+    const listUrl = 'https://' + GEMINI_HOST + '/v1beta/models?key=' + encodeURIComponent(apiKey);
+    const resp = await fetch(listUrl);
     if (!resp.ok) return [];
     const data = await resp.json();
     const list = (data.models || [])
@@ -75,7 +77,6 @@ async function discoverGeminiModels(apiKey) {
       )
       .map(m => m.name.replace(/^models\//, ''));
 
-    // Prefer flash models first (newest versions first)
     list.sort((a, b) => {
       const aFlash = /flash/i.test(a) ? 0 : 1;
       const bFlash = /flash/i.test(b) ? 0 : 1;
@@ -89,7 +90,7 @@ async function discoverGeminiModels(apiKey) {
 }
 
 async function callGeminiModel(apiKey, model, prompt, base64Data, mimeType) {
-  const url = `[https://generativelanguage.googleapis.com/v1beta/models/$](https://generativelanguage.googleapis.com/v1beta/models/$){encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const url = 'https://' + GEMINI_HOST + '/v1beta/models/' + encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(apiKey);
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -151,7 +152,6 @@ async function analyzeWithGemini(base64Data, mimeType, userContext) {
     }
   }
 
-  // Auto-discover active models directly from Google ListModels API
   const discovered = await discoverGeminiModels(apiKey);
   for (const m of discovered.slice(0, 5)) {
     if (tried.has(m)) continue;
@@ -174,8 +174,9 @@ async function analyzeWithOpenAI(base64Data, mimeType, userContext) {
   }
   const model = process.env.OPENAI_MODEL || 'gpt-4o';
   const dataUri = `data:${mimeType || 'image/png'};base64,${base64Data}`;
+  const openAiUrl = 'https://' + OPENAI_HOST + '/v1/chat/completions';
 
-  const response = await fetch('[https://api.openai.com/v1/chat/completions](https://api.openai.com/v1/chat/completions)', {
+  const response = await fetch(openAiUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
