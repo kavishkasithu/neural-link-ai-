@@ -1,14 +1,3 @@
-/**
- * AI Vision Chart Analysis Service
- * Analyzes TradingView chart screenshots for ANY market:
- *   - Forex (EUR/USD, GBP/JPY, USD/CAD, etc.)
- *   - Crypto (BTC/USDT, ETH/USDT, SOL/USDT, memecoins, etc.)
- *   - Stocks (AAPL, TSLA, NVDA, MSFT, etc.)
- *   - Commodities & Indices (XAU/USD Gold, NAS100, US30, SPX500, etc.)
- *
- * Uses Google Gemini Vision as primary engine and OpenAI GPT-4o Vision as fallback.
- */
-
 const SYSTEM_PROMPT = `You are an elite institutional Price Action & Smart Money Concepts (SMC) chart analyst.
 Analyze the uploaded TradingView chart screenshot carefully.
 
@@ -51,9 +40,8 @@ Return ONLY valid raw JSON (no markdown fences, no extra text) with this exact s
 
 IMPORTANT RULES:
 - "direction" must be "BUY / LONG", "SELL / SHORT", or "WAIT / NEUTRAL".
-- Ensure logical price ordering:
-  * For BUY / LONG: slPrice < entryPrice < tp1Price < tp2Price.
-  * For SELL / SHORT: slPrice > entryPrice > tp1Price > tp2Price.
+- For BUY / LONG: slPrice < entryPrice < tp1Price < tp2Price.
+- For SELL / SHORT: slPrice > entryPrice > tp1Price > tp2Price.
 - Use exact decimal precision matching the asset's price axis visible in the screenshot.
 - Never mention funding rates.`;
 
@@ -71,16 +59,37 @@ function cleanJsonResponse(text) {
   return JSON.parse(cleaned);
 }
 
-async function analyzeWithGemini(base64Data, mimeType, userContext) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey || apiKey === 'your_gemini_api_key_here') {
-    throw new Error('GEMINI_API_KEY not configured');
+async function discoverGeminiModels(apiKey) {
+  try {
+    const resp = await fetch(
+      `[https://generativelanguage.googleapis.com/v1beta/models?key=$](https://generativelanguage.googleapis.com/v1beta/models?key=$){encodeURIComponent(apiKey)}`
+    );
+    if (!resp.ok) return [];
+    const data = await resp.json();
+    const list = (data.models || [])
+      .filter(m =>
+        Array.isArray(m.supportedGenerationMethods) &&
+        m.supportedGenerationMethods.includes('generateContent') &&
+        /gemini/i.test(m.name) &&
+        !/(embedding|tts|imagen|veo|aqa|robotics|audio)/i.test(m.name)
+      )
+      .map(m => m.name.replace(/^models\//, ''));
+
+    // Prefer flash models first (newest versions first)
+    list.sort((a, b) => {
+      const aFlash = /flash/i.test(a) ? 0 : 1;
+      const bFlash = /flash/i.test(b) ? 0 : 1;
+      if (aFlash !== bFlash) return aFlash - bFlash;
+      return b.localeCompare(a);
+    });
+    return list;
+  } catch (_) {
+    return [];
   }
-  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+}
 
-  const prompt = `${SYSTEM_PROMPT}\n\nUser Hints -> Market Type: ${userContext.marketHint || 'AUTO DETECT'}, Style: ${userContext.tradeStyle || 'Intraday Sniper'}, Max Near-Entry Threshold: ${userContext.maxEntryDistPct || 0.25}%.`;
-
+async function callGeminiModel(apiKey, model, prompt, base64Data, mimeType) {
+  const url = `[https://generativelanguage.googleapis.com/v1beta/models/$](https://generativelanguage.googleapis.com/v1beta/models/$){encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -89,12 +98,7 @@ async function analyzeWithGemini(base64Data, mimeType, userContext) {
         {
           parts: [
             { text: prompt },
-            {
-              inline_data: {
-                mime_type: mimeType || 'image/png',
-                data: base64Data
-              }
-            }
+            { inline_data: { mime_type: mimeType || 'image/png', data: base64Data } }
           ]
         }
       ],
@@ -107,26 +111,71 @@ async function analyzeWithGemini(base64Data, mimeType, userContext) {
 
   if (!response.ok) {
     const errTxt = await response.text();
-    throw new Error(`Gemini Vision API error (${response.status}): ${errTxt.slice(0, 200)}`);
+    const err = new Error(`Gemini (${model}) error ${response.status}: ${errTxt.slice(0, 180)}`);
+    err.status = response.status;
+    throw err;
   }
 
   const json = await response.json();
   const rawText = json?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!rawText) throw new Error('Empty response from Gemini Vision');
-
+  if (!rawText) throw new Error(`Empty response from Gemini (${model})`);
   const parsed = cleanJsonResponse(rawText);
   return { ...parsed, aiEngine: `Google Gemini (${model})` };
 }
 
+async function analyzeWithGemini(base64Data, mimeType, userContext) {
+  const apiKey = (process.env.GEMINI_API_KEY || '').trim();
+  if (!apiKey || apiKey === 'your_gemini_api_key_here') {
+    throw new Error('GEMINI_API_KEY not configured');
+  }
+
+  const prompt = `${SYSTEM_PROMPT}\n\nUser Hints -> Market Type: ${userContext.marketHint || 'AUTO DETECT'}, Style: ${userContext.tradeStyle || 'Intraday Sniper'}, Max Near-Entry Threshold: ${userContext.maxEntryDistPct || 0.25}%.`;
+
+  const tried = new Set();
+  const initialModels = [
+    process.env.GEMINI_MODEL,
+    'gemini-3-flash-preview',
+    'gemini-2.5-flash-lite',
+    'gemini-2.0-flash'
+  ].filter(Boolean);
+
+  let lastErr = null;
+  for (const m of initialModels) {
+    if (tried.has(m)) continue;
+    tried.add(m);
+    try {
+      return await callGeminiModel(apiKey, m, prompt, base64Data, mimeType);
+    } catch (err) {
+      lastErr = err;
+      if (err.status !== 404 && err.status !== 400) throw err;
+    }
+  }
+
+  // Auto-discover active models directly from Google ListModels API
+  const discovered = await discoverGeminiModels(apiKey);
+  for (const m of discovered.slice(0, 5)) {
+    if (tried.has(m)) continue;
+    tried.add(m);
+    try {
+      return await callGeminiModel(apiKey, m, prompt, base64Data, mimeType);
+    } catch (err) {
+      lastErr = err;
+      if (err.status !== 404 && err.status !== 400) throw err;
+    }
+  }
+
+  throw lastErr || new Error('No compatible Gemini vision model found for this API key.');
+}
+
 async function analyzeWithOpenAI(base64Data, mimeType, userContext) {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey || apiKey === 'your_openai_api_key_here') {
-    throw new Error('OPENAI_API_KEY not configured');
+  const apiKey = (process.env.OPENAI_API_KEY || '').trim();
+  if (!apiKey || apiKey === 'your_openai_api_key_here' || apiKey.startsWith('key_')) {
+    throw new Error('Valid OpenAI secret key (sk-...) not configured');
   }
   const model = process.env.OPENAI_MODEL || 'gpt-4o';
   const dataUri = `data:${mimeType || 'image/png'};base64,${base64Data}`;
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+  const response = await fetch('[https://api.openai.com/v1/chat/completions](https://api.openai.com/v1/chat/completions)', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -145,10 +194,7 @@ async function analyzeWithOpenAI(base64Data, mimeType, userContext) {
               type: 'text',
               text: `Analyze this TradingView chart. Market hint: ${userContext.marketHint || 'AUTO DETECT'}, Trade style: ${userContext.tradeStyle || 'Intraday Sniper'}, Near-Entry threshold: ${userContext.maxEntryDistPct || 0.25}%.`
             },
-            {
-              type: 'image_url',
-              image_url: { url: dataUri, detail: 'high' }
-            }
+            { type: 'image_url', image_url: { url: dataUri, detail: 'high' } }
           ]
         }
       ]
@@ -157,38 +203,29 @@ async function analyzeWithOpenAI(base64Data, mimeType, userContext) {
 
   if (!response.ok) {
     const errTxt = await response.text();
-    throw new Error(`OpenAI Vision API error (${response.status}): ${errTxt.slice(0, 200)}`);
+    throw new Error(`OpenAI Vision API error (${response.status}): ${errTxt.slice(0, 180)}`);
   }
 
   const json = await response.json();
   const rawText = json?.choices?.[0]?.message?.content;
   if (!rawText) throw new Error('Empty response from OpenAI Vision');
-
   const parsed = cleanJsonResponse(rawText);
   return { ...parsed, aiEngine: `OpenAI Vision (${model})` };
 }
 
-/**
- * Main Vision Entrypoint: Tries Gemini -> Falls back to OpenAI -> Clear error if no keys set
- */
 async function analyzeTradingViewChart(base64Data, mimeType, userContext = {}) {
   const errors = [];
-
   try {
     return await analyzeWithGemini(base64Data, mimeType, userContext);
   } catch (err) {
     errors.push(err.message);
   }
-
   try {
     return await analyzeWithOpenAI(base64Data, mimeType, userContext);
   } catch (err) {
     errors.push(err.message);
   }
-
-  throw new Error(
-    `No active Vision AI key configured on backend (.env). Details: ${errors.join(' | ')}`
-  );
+  throw new Error(`Vision AI failed: ${errors.join(' | ')}`);
 }
 
 module.exports = { analyzeTradingViewChart };
