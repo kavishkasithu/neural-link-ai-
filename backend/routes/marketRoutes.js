@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 
-// GET /api/market/binance-scan
+// ---------------- LIVE BINANCE FUTURES SCAN (PRICE + 24H CHANGE + FUNDING RATE) ----------------
 router.get('/binance-scan', async (req, res) => {
   try {
     const [tickerResp, fundingResp] = await Promise.all([
@@ -9,90 +9,127 @@ router.get('/binance-scan', async (req, res) => {
       fetch('https://fapi.binance.com/fapi/v1/premiumIndex')
     ]);
 
-    const tickers = tickerResp.ok ? await tickerResp.json() : [];
-    const fundings = fundingResp.ok ? await fundingResp.json() : [];
+    if (!tickerResp.ok || !fundingResp.ok) {
+      return res.json({ ok: false, pairs: [] });
+    }
 
-    const tickerMap = {};
-    tickers.forEach(t => {
-      tickerMap[t.symbol] = {
-        price: parseFloat(t.lastPrice),
-        change: parseFloat(t.priceChangePercent)
-      };
-    });
+    const tickers = await tickerResp.json();
+    const fundings = await fundingResp.json();
 
-    const pairs = [];
-    fundings.forEach(f => {
-      if (f.symbol && f.symbol.endsWith('USDT')) {
-        const ratePct = parseFloat(f.lastFundingRate) * 100;
-        const markPrice = parseFloat(f.markPrice);
-        if (!isNaN(ratePct) && !isNaN(markPrice) && markPrice > 0) {
-          pairs.push({
-            binanceSymbol: f.symbol,
-            symbol: f.symbol.replace(/USDT$/, '/USDT'),
-            price: tickerMap[f.symbol]?.price || markPrice,
-            change: tickerMap[f.symbol]?.change || 0,
-            fundingRate: ratePct
-          });
-        }
-      }
-    });
+    const fundingMap = {};
+    if (Array.isArray(fundings)) {
+      fundings.forEach(f => {
+        fundingMap[f.symbol] = parseFloat(f.lastFundingRate) || 0;
+      });
+    }
 
-    pairs.sort((a, b) => Math.abs(b.fundingRate) - Math.abs(a.fundingRate));
-    res.json({ ok: true, count: pairs.length, pairs: pairs.slice(0, 80) });
+    const pairs = (Array.isArray(tickers) ? tickers : [])
+      .filter(t => t.symbol && t.symbol.endsWith('USDT'))
+      .map(t => ({
+        binanceSymbol: t.symbol,
+        price: parseFloat(t.lastPrice) || 0,
+        change: parseFloat(t.priceChangePercent) || 0,
+        fundingRate: fundingMap[t.symbol] ?? 0
+      }));
+
+    return res.json({ ok: true, pairs });
   } catch (err) {
-    res.status(502).json({ ok: false, error: 'Binance upstream unavailable', details: err.message });
+    return res.json({ ok: false, pairs: [], error: err.message });
   }
 });
 
-// GET /api/market/klines?symbol=BTCUSDT&interval=15m&limit=56
+// ---------------- LIVE KLINES PROXY ----------------
 router.get('/klines', async (req, res) => {
   try {
-    const symbol = String(req.query.symbol || 'BTCUSDT').toUpperCase();
+    const symbol = String(req.query.symbol || 'BTCUSDT').toUpperCase().replace(/[^A-Z0-9]/g, '');
     const interval = String(req.query.interval || '15m');
-    const limit = Math.min(120, Math.max(20, parseInt(req.query.limit || '56', 10)));
+    const limit = Math.min(200, Math.max(10, parseInt(req.query.limit, 10) || 60));
 
-    const resp = await fetch(
-      `https://fapi.binance.com/fapi/v1/klines?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&limit=${limit}`
-    );
-    if (!resp.ok) throw new Error('Klines fetch failed');
-    const data = await resp.json();
-    const klines = data.map(k => ({
-      time: k[0],
+    const url = `https://api.binance.com/api/v3/klines?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&limit=${limit}`;
+    const resp = await fetch(url);
+    if (!resp.ok) return res.json({ ok: false, klines: [] });
+
+    const raw = await resp.json();
+    const klines = raw.map(k => ({
+      time: Math.floor(k[0] / 1000),
       open: parseFloat(k[1]),
       high: parseFloat(k[2]),
       low: parseFloat(k[3]),
       close: parseFloat(k[4])
     }));
-    res.json({ ok: true, symbol, interval, klines });
+
+    return res.json({ ok: true, klines });
   } catch (err) {
-    res.status(502).json({ ok: false, error: err.message });
+    return res.json({ ok: false, klines: [], error: err.message });
   }
 });
 
-// GET /api/market/news
+// ---------------- LIVE RSS NEWS FEED (CRYPTO + FOREX + STOCKS — ZERO API KEY) ----------------
+let cachedRssNews = { ts: 0, items: [] };
+
+const RSS_SOURCES = [
+  { name: 'COINTELEGRAPH', url: 'https://cointelegraph.com/rss' },
+  { name: 'FOREXLIVE',     url: 'https://www.forexlive.com/feed/news' },
+  { name: 'YAHOO FINANCE', url: 'https://finance.yahoo.com/news/rssindex' }
+];
+
+function detectSentiment(title = '') {
+  const t = title.toLowerCase();
+  const bull = ['surge', 'rally', 'bull', 'soar', 'jump', 'gain', 'high', 'breakout', 'buy', 'etf', 'approval', 'growth', 'record', 'up', 'rise'];
+  const bear = ['crash', 'drop', 'bear', 'plunge', 'fall', 'dump', 'sell', 'hack', 'sec', 'lawsuit', 'fear', 'recession', 'down', 'slump', 'cut'];
+  const bScore = bull.filter(w => t.includes(w)).length;
+  const sScore = bear.filter(w => t.includes(w)).length;
+  if (bScore > sScore) return 'BULLISH';
+  if (sScore > bScore) return 'BEARISH';
+  return 'NEUTRAL';
+}
+
+function parseRssItems(xml, sourceName) {
+  const items = [];
+  const matches = xml.match(/<item[\s\S]*?<\/item>/gi) || [];
+  for (const block of matches.slice(0, 4)) {
+    const rawTitle = (block.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || '';
+    const title = rawTitle
+      .replace(/<!\[CDATA\[\vert{}\]\]>/g, '')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&amp;/g, '&')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .trim();
+    const link = ((block.match(/<link[^>]*>([\s\S]*?)<\/link>/i) || [])[1] || '').trim();
+    if (title) {
+      items.push({ source: sourceName, title, link, sentiment: detectSentiment(title) });
+    }
+  }
+  return items;
+}
+
 router.get('/news', async (req, res) => {
   try {
-    const resp = await fetch('https://min-api.cryptocompare.com/data/v2/news/?lang=EN');
-    if (!resp.ok) throw new Error('News upstream error');
-    const json = await resp.json();
-    const items = (json.Data || []).slice(0, 8).map(item => {
-      const lower = (item.title || '').toLowerCase();
-      const isBear = /(hack|drop|crash|lawsuit|outflow|ban|liquidation)/.test(lower);
-      return {
-        title: item.title,
-        source: item.source_info?.name || 'CryptoWire',
-        sentiment: isBear ? 'BEARISH' : 'BULLISH'
-      };
-    });
-    res.json({ ok: true, news: items });
-  } catch (err) {
-    res.json({
-      ok: true,
-      news: [
-        { title: 'Institutional crypto & gold flows strengthen across major liquidity sessions.', source: 'AI Macro Desk', sentiment: 'BULLISH' },
-        { title: 'High-beta Layer-1 & AI tokens experience strong open-interest expansion.', source: 'On-Chain Cortex', sentiment: 'BULLISH' }
-      ]
-    });
+    if (Date.now() - cachedRssNews.ts < 5 * 60 * 1000 && cachedRssNews.items.length > 0) {
+      return res.json({ ok: true, news: cachedRssNews.items });
+    }
+
+    const results = await Promise.allSettled(
+      RSS_SOURCES.map(async (src) => {
+        const resp = await fetch(src.url, { headers: { 'User-Agent': 'NeuralTradingAI/1.0' } });
+        if (!resp.ok) return [];
+        const xml = await resp.text();
+        return parseRssItems(xml, src.name);
+      })
+    );
+
+    const combined = results
+      .filter(r => r.status === 'fulfilled')
+      .flatMap(r => r.value)
+      .slice(0, 12);
+
+    if (combined.length > 0) {
+      cachedRssNews = { ts: Date.now(), items: combined };
+    }
+    return res.json({ ok: true, news: cachedRssNews.items });
+  } catch (_) {
+    return res.json({ ok: true, news: cachedRssNews.items || [] });
   }
 });
 
