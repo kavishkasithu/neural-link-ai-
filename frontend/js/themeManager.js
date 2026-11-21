@@ -1,6 +1,6 @@
 /**
- * ADMIN-ONLY THEME & CRYPTO BUBBLES INTERFACE ENGINE
- * Injects theme controls strictly inside #admin-panel (hidden from regular users).
+ * ADMIN-ONLY THEME STUDIO (10 THEMES + CRYPTO BUBBLES PHYSICS ENGINE)
+ * Visible strictly to Admin (inside #admin-panel AND via Admin-only floating 🎨 THEMES button).
  */
 window.NeuralThemeManager = (function () {
   const STORAGE_KEY = 'neural_ai_active_theme';
@@ -15,7 +15,7 @@ window.NeuralThemeManager = (function () {
     {
       id: 'neural_default',
       name: '🧠 Neural Cortex',
-      desc: 'Default Organic Neural Network',
+      desc: 'Default Organic Network',
       isBubbles: false,
       css: ''
     },
@@ -34,13 +34,12 @@ window.NeuralThemeManager = (function () {
       desc: 'Magenta & Cyan Neon Glass',
       isBubbles: false,
       css: `
-        body[data-neural-theme="cyberpunk_neon"] { background: radial-gradient(circle at 20% 20%, #1c052b 0%, #05020d 70%) !important; }
-        body[data-neural-theme="cyberpunk_neon"] .glass-panel,
+        body[data-neural-theme="cyberpunk_neon"] { background: radial-gradient(circle at 20% 20%, #240538 0%, #06020f 70%) !important; }
         body[data-neural-theme="cyberpunk_neon"] [id$="-widget"],
         body[data-neural-theme="cyberpunk_neon"] #asset-terminal-card,
         body[data-neural-theme="cyberpunk_neon"] #hud-wrapper-tab {
-          border-color: rgba(236, 72, 153, 0.55) !important;
-          box-shadow: 0 0 24px rgba(236, 72, 153, 0.22), inset 0 0 14px rgba(34, 211, 238, 0.12) !important;
+          border-color: rgba(236, 72, 153, 0.6) !important;
+          box-shadow: 0 0 24px rgba(236, 72, 153, 0.25), inset 0 0 14px rgba(34, 211, 238, 0.14) !important;
         }
       `
     },
@@ -50,13 +49,12 @@ window.NeuralThemeManager = (function () {
       desc: 'Institutional Black & Gold',
       isBubbles: false,
       css: `
-        body[data-neural-theme="obsidian_gold"] { background: radial-gradient(circle at 50% 20%, #1a1406 0%, #050402 75%) !important; }
-        body[data-neural-theme="obsidian_gold"] .glass-panel,
+        body[data-neural-theme="obsidian_gold"] { background: radial-gradient(circle at 50% 20%, #211805 0%, #050402 75%) !important; }
         body[data-neural-theme="obsidian_gold"] [id$="-widget"],
         body[data-neural-theme="obsidian_gold"] #asset-terminal-card,
         body[data-neural-theme="obsidian_gold"] #hud-wrapper-tab {
-          border-color: rgba(245, 158, 11, 0.55) !important;
-          box-shadow: 0 0 26px rgba(245, 158, 11, 0.18), inset 0 0 12px rgba(251, 191, 36, 0.08) !important;
+          border-color: rgba(245, 158, 11, 0.6) !important;
+          box-shadow: 0 0 26px rgba(245, 158, 11, 0.22), inset 0 0 12px rgba(251, 191, 36, 0.1) !important;
         }
       `
     },
@@ -66,13 +64,12 @@ window.NeuralThemeManager = (function () {
       desc: 'Emerald Quant Terminal',
       isBubbles: false,
       css: `
-        body[data-neural-theme="matrix_terminal"] { background: radial-gradient(circle at 50% 50%, #021a0d 0%, #010804 80%) !important; }
-        body[data-neural-theme="matrix_terminal"] .glass-panel,
+        body[data-neural-theme="matrix_terminal"] { background: radial-gradient(circle at 50% 50%, #022110 0%, #010804 80%) !important; }
         body[data-neural-theme="matrix_terminal"] [id$="-widget"],
         body[data-neural-theme="matrix_terminal"] #asset-terminal-card,
         body[data-neural-theme="matrix_terminal"] #hud-wrapper-tab {
-          border-color: rgba(16, 185, 129, 0.55) !important;
-          box-shadow: 0 0 24px rgba(16, 185, 129, 0.20) !important;
+          border-color: rgba(16, 185, 129, 0.6) !important;
+          box-shadow: 0 0 24px rgba(16, 185, 129, 0.24) !important;
         }
       `
     },
@@ -82,13 +79,77 @@ window.NeuralThemeManager = (function () {
       desc: 'Violet & Teal Northern Glow',
       isBubbles: false,
       css: `
-        body[data-neural-theme="liquid_aurora"] { background: linear-gradient(135deg, #071626 0%, #140826 50%, #041c1a 100%) !important; }
-        body[data-neural-theme="liquid_aurora"] .glass-panel,
+        body[data-neural-theme="liquid_aurora"] { background: linear-gradient(135deg, #071b2e 0%, #1a0a33 50%, #042420 100%) !important; }
         body[data-neural-theme="liquid_aurora"] [id$="-widget"],
         body[data-neural-theme="liquid_aurora"] #asset-terminal-card,
         body[data-neural-theme="liquid_aurora"] #hud-wrapper-tab {
-          border-color: rgba(139, 92, 246, 0.55) !important;
-          box-shadow: 0 0 28px rgba(45, 212, 191, 0.18), inset 0 0 14px rgba(139, 92, 246, 0.12) !important;
+          border-color: rgba(139, 92, 246, 0.6) !important;
+          box-shadow: 0 0 28px rgba(45, 212, 191, 0.22), inset 0 0 14px rgba(139, 92, 246, 0.15) !important;
+        }
+      `
+    },
+    {
+      id: 'crimson_inferno',
+      name: '🌋 Crimson Inferno',
+      desc: 'Blood Red & Lava Dark',
+      isBubbles: false,
+      css: `
+        body[data-neural-theme="crimson_inferno"] { background: radial-gradient(circle at 50% 30%, #2b060d 0%, #080203 78%) !important; }
+        body[data-neural-theme="crimson_inferno"] [id$="-widget"],
+        body[data-neural-theme="crimson_inferno"] #asset-terminal-card,
+        body[data-neural-theme="crimson_inferno"] #hud-wrapper-tab {
+          border-color: rgba(244, 63, 94, 0.65) !important;
+          box-shadow: 0 0 26px rgba(244, 63, 94, 0.25), inset 0 0 12px rgba(251, 146, 60, 0.12) !important;
+        }
+      `
+    },
+    {
+      id: 'arctic_frost',
+      name: '❄️ Arctic Frost',
+      desc: 'Icy Glacier Liquid Glass',
+      isBubbles: false,
+      css: `
+        body[data-neural-theme="arctic_frost"] { background: radial-gradient(circle at 50% 20%, #0a2538 0%, #030b14 80%) !important; }
+        body[data-neural-theme="arctic_frost"] [id$="-widget"],
+        body[data-neural-theme="arctic_frost"] #asset-terminal-card,
+        body[data-neural-theme="arctic_frost"] #hud-wrapper-tab {
+          border-color: rgba(125, 211, 252, 0.65) !important;
+          box-shadow: 0 0 26px rgba(56, 189, 248, 0.25), inset 0 0 16px rgba(224, 242, 254, 0.12) !important;
+        }
+      `
+    },
+    {
+      id: 'synthwave_80s',
+      name: '🌆 Synthwave 80s',
+      desc: 'Retro Sunset Purple & Orange',
+      isBubbles: false,
+      css: `
+        body[data-neural-theme="synthwave_80s"] { background: linear-gradient(160deg, #1b0736 0%, #2d0b38 55%, #2b1008 100%) !important; }
+        body[data-neural-theme="synthwave_80s"] [id$="-widget"],
+        body[data-neural-theme="synthwave_80s"] #asset-terminal-card,
+        body[data-neural-theme="synthwave_80s"] #hud-wrapper-tab {
+          border-color: rgba(251, 146, 60, 0.6) !important;
+          box-shadow: 0 0 24px rgba(192, 38, 211, 0.25), inset 0 0 14px rgba(251, 146, 60, 0.12) !important;
+        }
+      `
+    },
+    {
+      id: 'diamond_rgb',
+      name: '💎 Diamond RGB',
+      desc: 'Animated RGB Liquid Glow',
+      isBubbles: false,
+      css: `
+        @keyframes neuralRgbBorder {
+          0%   { border-color: rgba(34, 211, 238, 0.75); box-shadow: 0 0 22px rgba(34, 211, 238, 0.28); }
+          33%  { border-color: rgba(168, 85, 247, 0.75); box-shadow: 0 0 22px rgba(168, 85, 247, 0.28); }
+          66%  { border-color: rgba(16, 185, 129, 0.75); box-shadow: 0 0 22px rgba(16, 185, 129, 0.28); }
+          100% { border-color: rgba(34, 211, 238, 0.75); box-shadow: 0 0 22px rgba(34, 211, 238, 0.28); }
+        }
+        body[data-neural-theme="diamond_rgb"] { background: radial-gradient(circle at 50% 40%, #0d1326 0%, #03050a 80%) !important; }
+        body[data-neural-theme="diamond_rgb"] [id$="-widget"],
+        body[data-neural-theme="diamond_rgb"] #asset-terminal-card,
+        body[data-neural-theme="diamond_rgb"] #hud-wrapper-tab {
+          animation: neuralRgbBorder 5s linear infinite !important;
         }
       `
     }
@@ -105,7 +166,7 @@ window.NeuralThemeManager = (function () {
   // ---------------- CRYPTO BUBBLES PHYSICS ENGINE ----------------
   function initBubblesData(w, h) {
     const nodes = window.NeuralCanvasEngine ? window.NeuralCanvasEngine.getNodes().filter(n => n.asset) : [];
-    bubbles = nodes.map((n, i) => {
+    bubbles = nodes.map((n) => {
       const chg = Number(n.asset.change || 0);
       const r = Math.max(30, Math.min(72, 34 + Math.abs(chg) * 3.8 + (n.isCore ? 8 : 0)));
       return {
@@ -124,7 +185,7 @@ window.NeuralThemeManager = (function () {
 
   function startCryptoBubbles() {
     const neuralCanvas = document.getElementById('neural-canvas');
-    if (neuralCanvas) neuralCanvas.style.opacity = '0.08';
+    if (neuralCanvas) neuralCanvas.style.opacity = '0.06';
 
     if (!bubbleCanvas) {
       bubbleCanvas = document.createElement('canvas');
@@ -173,7 +234,6 @@ window.NeuralThemeManager = (function () {
       const h = window.innerHeight;
       bubbleCtx.clearRect(0, 0, w, h);
 
-      // Update physics & soft collisions
       for (let i = 0; i < bubbles.length; i++) {
         const b = bubbles[i];
         const chg = Number(b.asset.change || 0);
@@ -184,7 +244,6 @@ window.NeuralThemeManager = (function () {
         b.x += b.vx + Math.sin(b.phase) * 0.15;
         b.y += b.vy + Math.cos(b.phase) * 0.15;
 
-        // Keep inside viewport bounds
         if (b.x - b.r < 12) { b.x = b.r + 12; b.vx = Math.abs(b.vx); }
         if (b.x + b.r > w - 12) { b.x = w - b.r - 12; b.vx = -Math.abs(b.vx); }
         if (b.y - b.r < 72) { b.y = b.r + 72; b.vy = Math.abs(b.vy); }
@@ -206,7 +265,6 @@ window.NeuralThemeManager = (function () {
         }
       }
 
-      // Draw glossy Crypto Bubbles
       bubbles.forEach((b, idx) => {
         const chg = Number(b.asset.change || 0);
         const isPos = chg >= 0;
@@ -233,7 +291,6 @@ window.NeuralThemeManager = (function () {
         bubbleCtx.strokeStyle = isPos ? 'rgba(52, 211, 153, 0.95)' : 'rgba(251, 113, 133, 0.95)';
         bubbleCtx.stroke();
 
-        // Symbol & % text
         const shortSym = String(b.asset.symbol || '').replace('/USDT', '').replace('/USD', '');
         bubbleCtx.fillStyle = '#ffffff';
         bubbleCtx.textAlign = 'center';
@@ -279,11 +336,10 @@ window.NeuralThemeManager = (function () {
       stopCryptoBubbles();
     }
 
-    // Highlight active button inside Admin Panel
     document.querySelectorAll('.admin-theme-btn').forEach(btn => {
       const active = btn.dataset.themeId === activeTheme;
       btn.style.borderColor = active ? '#22d3ee' : 'rgba(56, 189, 248, 0.25)';
-      btn.style.background = active ? 'rgba(34, 211, 238, 0.20)' : 'rgba(15, 23, 42, 0.85)';
+      btn.style.background = active ? 'rgba(34, 211, 238, 0.22)' : 'rgba(15, 23, 42, 0.88)';
     });
 
     if (!silent && window.showToast) {
@@ -291,45 +347,114 @@ window.NeuralThemeManager = (function () {
     }
   }
 
-  // ---------------- INJECT ADMIN-ONLY THEME SWITCHER ----------------
-  function injectAdminThemeControls() {
+  function buildThemeGridHtml() {
+    return THEMES.map(t => `
+      <button type="button" data-theme-id="${t.id}" class="admin-theme-btn"
+        style="text-align:left; padding:8px; border-radius:8px; border:1px solid rgba(56,189,248,0.25); background:rgba(15,23,42,0.88); cursor:pointer; transition:all 0.15s ease;">
+        <div style="font-size:11px; font-weight:700; color:#ffffff;">${t.name}</div>
+        <div style="font-size:9px; color:rgba(186,230,253,0.75); margin-top:2px;">${t.desc}</div>
+      </button>
+    `).join('');
+  }
+
+  function wireThemeButtons(container) {
+    container.querySelectorAll('.admin-theme-btn').forEach(btn => {
+      btn.addEventListener('click', () => applyTheme(btn.dataset.themeId));
+    });
+  }
+
+  // ---------------- ADMIN-ONLY FLOATING BUTTON + POPUP MODAL ----------------
+  function createAdminFloatingStudio() {
+    if (document.getElementById('admin-floating-theme-btn')) return;
+
+    const btn = document.createElement('button');
+    btn.id = 'admin-floating-theme-btn';
+    btn.type = 'button';
+    btn.textContent = '🎨 THEMES';
+    btn.style.cssText = [
+      'position:fixed', 'bottom:18px', 'right:18px', 'z-index:9990',
+      'display:none', 'align-items:center', 'gap:6px',
+      'padding:9px 14px', 'border-radius:999px',
+      'background:rgba(8,18,32,0.92)', 'backdrop-filter:blur(12px)',
+      'border:1px solid rgba(34,211,238,0.65)', 'color:#67e8f9',
+      'font-family:"JetBrains Mono",monospace', 'font-size:11px', 'font-weight:800',
+      'box-shadow:0 0 20px rgba(34,211,238,0.35)', 'cursor:pointer'
+    ].join(';');
+    document.body.appendChild(btn);
+
+    const modal = document.createElement('div');
+    modal.id = 'admin-theme-studio-modal';
+    modal.style.cssText = [
+      'position:fixed', 'bottom:64px', 'right:18px', 'z-index:9995',
+      'width:320px', 'max-height:75vh', 'overflow-y:auto',
+      'display:none', 'padding:14px', 'border-radius:14px',
+      'background:rgba(5,12,24,0.96)', 'backdrop-filter:blur(16px)',
+      'border:1px solid rgba(34,211,238,0.55)',
+      'box-shadow:0 12px 40px rgba(0,0,0,0.75)'
+    ].join(';');
+
+    modal.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <span style="font-size:11px; font-weight:800; color:#67e8f9; letter-spacing:0.06em;">🎨 ADMIN THEME STUDIO (10)</span>
+        <button type="button" id="close-theme-studio-btn" style="background:none; border:none; color:#fb7185; font-weight:800; cursor:pointer; font-size:14px;">✕</button>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+        ${buildThemeGridHtml()}
+      </div>
+    `;
+    document.body.appendChild(modal);
+    wireThemeButtons(modal);
+
+    btn.addEventListener('click', () => {
+      modal.style.display = modal.style.display === 'none' ? 'block' : 'none';
+      applyTheme(activeTheme, true);
+    });
+    modal.querySelector('#close-theme-studio-btn').addEventListener('click', () => {
+      modal.style.display = 'none';
+    });
+
+    // Show ONLY when Admin is logged in (#admin-access-btn is visible)
+    const syncAdminVisibility = () => {
+      const adminBtn = document.getElementById('admin-access-btn');
+      const isAdminVisible = adminBtn && !adminBtn.classList.contains('hidden');
+      btn.style.display = isAdminVisible ? 'flex' : 'none';
+      if (!isAdminVisible) modal.style.display = 'none';
+    };
+    setInterval(syncAdminVisibility, 1000);
+    syncAdminVisibility();
+  }
+
+  // ---------------- ALSO INJECT INSIDE ADMIN PANEL ----------------
+  function injectInsideAdminPanel() {
     const adminPanel = document.getElementById('admin-panel');
     if (!adminPanel || document.getElementById('admin-theme-switcher-box')) return;
 
     const box = document.createElement('div');
     box.id = 'admin-theme-switcher-box';
-    box.className = 'p-3 rounded-xl bg-slate-950/90 border border-cyan-500/35 space-y-2 mb-3';
+    box.style.cssText = 'padding:10px; border-radius:12px; background:rgba(2,6,23,0.92); border:1px solid rgba(34,211,238,0.4); margin-bottom:10px;';
     box.innerHTML = `
-      <div class="flex items-center justify-between">
-        <span class="text-[10px] font-bold tracking-wider text-cyan-300 uppercase">🎨 Admin Theme & Interface</span>
-        <span class="text-[8px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-400/40 font-bold">ADMIN ONLY</span>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+        <span style="font-size:10px; font-weight:800; color:#67e8f9;">🎨 ADMIN THEMES (10)</span>
+        <span style="font-size:8px; padding:2px 6px; border-radius:4px; background:rgba(245,158,11,0.2); color:#fcd34d; font-weight:700;">ADMIN ONLY</span>
       </div>
-      <div class="grid grid-cols-2 gap-1.5">
-        ${THEMES.map(t => `
-          <button type="button" data-theme-id="${t.id}" class="admin-theme-btn text-left p-2 rounded-lg border transition-all hover:border-cyan-400">
-            <div class="text-[10px] font-bold text-white">${t.name}</div>
-            <div class="text-[8px] text-cyan-200/70 leading-tight">${t.desc}</div>
-          </button>
-        `).join('')}
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+        ${buildThemeGridHtml()}
       </div>
     `;
 
-    // Insert right inside admin panel body (before user list)
     const usersList = document.getElementById('admin-users-list');
     if (usersList && usersList.parentElement) {
       usersList.parentElement.insertBefore(box, usersList);
     } else {
       adminPanel.appendChild(box);
     }
-
-    box.querySelectorAll('.admin-theme-btn').forEach(btn => {
-      btn.addEventListener('click', () => applyTheme(btn.dataset.themeId));
-    });
+    wireThemeButtons(box);
   }
 
   window.addEventListener('load', () => {
     injectThemeStyles();
-    injectAdminThemeControls();
+    createAdminFloatingStudio();
+    injectInsideAdminPanel();
     setTimeout(() => applyTheme(activeTheme, true), 450);
   });
 
