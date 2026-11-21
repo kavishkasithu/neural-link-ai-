@@ -1,6 +1,6 @@
 /**
  * TradingView Live Candlestick Chart + Long/Short Position Tool Box Overlay
- * Auto-syncs Entry/TP/SL to real live candle price so the Position Box is ALWAYS visible.
+ * Includes Interactive Timeframe Switcher (1m, 5m, 15m, 1H, 4H, 1D)
  */
 window.TVPositionChart = (function () {
   let chart = null;
@@ -9,7 +9,18 @@ window.TVPositionChart = (function () {
   let overlayCtx = null;
   let resizeObserver = null;
   let currentSetup = null;
+  let currentSymbol = 'BTC/USDT';
+  let activeTimeframe = '15m';
   let rafId = null;
+
+  const TIMEFRAMES = [
+    { label: '1m', value: '1m', sec: 60 },
+    { label: '5m', value: '5m', sec: 300 },
+    { label: '15m', value: '15m', sec: 900 },
+    { label: '1H', value: '1h', sec: 3600 },
+    { label: '4H', value: '4h', sec: 14400 },
+    { label: '1D', value: '1d', sec: 86400 }
+  ];
 
   function toBinanceSymbol(symbol) {
     const clean = String(symbol || 'BTCUSDT').toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -34,6 +45,7 @@ window.TVPositionChart = (function () {
         close: parseFloat(k[4])
       }));
     } catch (_) {
+      const tfObj = TIMEFRAMES.find(t => t.value === interval) || TIMEFRAMES[2];
       const now = Math.floor(Date.now() / 1000);
       const candles = [];
       let p = fallbackPrice * 0.992;
@@ -43,7 +55,7 @@ window.TVPositionChart = (function () {
         const close = i === 0 ? fallbackPrice : open + delta;
         const high = Math.max(open, close) + Math.random() * fallbackPrice * 0.002;
         const low = Math.min(open, close) - Math.random() * fallbackPrice * 0.002;
-        candles.push({ time: now - i * 900, open, high, low, close });
+        candles.push({ time: now - i * tfObj.sec, open, high, low, close });
         p = close;
       }
       return candles;
@@ -73,7 +85,6 @@ window.TVPositionChart = (function () {
 
     if (yEntry === null || yTp === null || ySl === null) return;
 
-    // Position Box from ~58% width to right price scale
     const boxLeft = Math.floor(rect.width * 0.58);
     const boxRight = Math.floor(rect.width - 74);
     const boxW = Math.max(90, boxRight - boxLeft);
@@ -140,6 +151,54 @@ window.TVPositionChart = (function () {
     rafId = requestAnimationFrame(loop);
   }
 
+  function createTimeframeBar(mount) {
+    const bar = document.createElement('div');
+    bar.style.cssText = [
+      'position:absolute', 'top:8px', 'left:8px', 'z-index:10',
+      'display:flex', 'gap:4px', 'padding:3px',
+      'background:rgba(6,12,20,0.82)', 'backdrop-filter:blur(8px)',
+      'border:1px solid rgba(56,189,248,0.28)', 'border-radius:7px'
+    ].join(';');
+
+    const updateButtons = () => {
+      bar.querySelectorAll('button').forEach(btn => {
+        const isActive = btn.dataset.tf === activeTimeframe;
+        btn.style.background = isActive ? 'rgba(56,189,248,0.28)' : 'transparent';
+        btn.style.color = isActive ? '#38bdf8' : '#94a3b8';
+        btn.style.borderColor = isActive ? 'rgba(56,189,248,0.7)' : 'transparent';
+      });
+    };
+
+    TIMEFRAMES.forEach(tf => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = tf.label;
+      btn.dataset.tf = tf.value;
+      btn.style.cssText = [
+        'font-family:"JetBrains Mono",monospace', 'font-size:10px', 'font-weight:700',
+        'padding:3px 7px', 'border-radius:5px', 'cursor:pointer',
+        'border:1px solid transparent', 'transition:all 0.15s ease'
+      ].join(';');
+
+      btn.addEventListener('click', async () => {
+        if (activeTimeframe === tf.value || !candleSeries) return;
+        activeTimeframe = tf.value;
+        updateButtons();
+        const candles = await fetchLiveCandles(currentSymbol, activeTimeframe, currentSetup?.entry || 100);
+        if (candleSeries && candles.length) {
+          candleSeries.setData(candles);
+          chart.timeScale().fitContent();
+          drawPositionBox();
+        }
+      });
+
+      bar.appendChild(btn);
+    });
+
+    updateButtons();
+    mount.appendChild(bar);
+  }
+
   async function renderIntoModal(targetCanvasOrContainer, setup) {
     if (!window.LightweightCharts || !targetCanvasOrContainer) return;
 
@@ -162,13 +221,15 @@ window.TVPositionChart = (function () {
     if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
     if (chart) { try { chart.remove(); } catch (_) {} chart = null; }
 
+    currentSymbol = setup.symbol || 'BTC/USDT';
+    activeTimeframe = setup.timeframe || activeTimeframe || '15m';
+
     const width = mount.clientWidth || 720;
     const height = mount.clientHeight || 300;
 
-    const candles = await fetchLiveCandles(setup.symbol, setup.timeframe || '15m', setup.entry);
+    const candles = await fetchLiveCandles(currentSymbol, activeTimeframe, setup.entry);
     const livePrice = candles.length ? candles[candles.length - 1].close : Number(setup.entry);
 
-    // Auto-sync Entry / TP / SL if node price was stale compared to real live Binance candles
     let entry = Number(setup.entry);
     let tp = Number(setup.tp);
     let sl = Number(setup.sl);
@@ -181,7 +242,6 @@ window.TVPositionChart = (function () {
       tp = isLong ? livePrice * (1 + tpPct) : livePrice * (1 - tpPct);
       sl = isLong ? livePrice * (1 - slPct) : livePrice * (1 + slPct);
 
-      // Keep modal header price synced with live chart
       const priceEl = document.getElementById('chart-modal-price');
       if (priceEl && window.formatPrice) priceEl.textContent = window.formatPrice(livePrice);
     }
@@ -204,7 +264,7 @@ window.TVPositionChart = (function () {
       crosshair: { mode: window.LightweightCharts.CrosshairMode.Normal },
       rightPriceScale: {
         borderColor: 'rgba(148, 163, 184, 0.15)',
-        scaleMargins: { top: 0.12, bottom: 0.12 }
+        scaleMargins: { top: 0.14, bottom: 0.12 }
       },
       timeScale: {
         borderColor: 'rgba(148, 163, 184, 0.15)',
@@ -232,7 +292,6 @@ window.TVPositionChart = (function () {
 
     candleSeries.setData(candles);
 
-    // TradingView Price Lines (TP, ENT, SL) on Right Axis
     candleSeries.createPriceLine({
       price: tp,
       color: '#00e676',
@@ -262,6 +321,8 @@ window.TVPositionChart = (function () {
     overlayCanvas.style.cssText = 'position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:5;';
     mount.appendChild(overlayCanvas);
     overlayCtx = overlayCanvas.getContext('2d');
+
+    createTimeframeBar(mount);
 
     chart.timeScale().fitContent();
     startOverlaySync();
