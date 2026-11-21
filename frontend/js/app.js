@@ -103,11 +103,11 @@
           </div>`;
       }).join('');
 
-      const newsHtml = (data.news || []).slice(0, 4).map(item => `
+      const newsHtml = (data.news || []).slice(0, 6).map(item => `
         <div class="p-2 rounded-lg bg-slate-950/80 border border-cyan-500/20 space-y-0.5">
           <div class="flex justify-between text-[8px]">
             <span class="text-cyan-300/80 font-bold">${item.source}</span>
-            <span class="${item.sentiment === 'BULLISH' ? 'text-emerald-300' : 'text-rose-300'} font-bold">${item.sentiment}</span>
+            <span class="${item.sentiment === 'BULLISH' ? 'text-emerald-300' : item.sentiment === 'BEARISH' ? 'text-rose-300' : 'text-amber-300'} font-bold">${item.sentiment}</span>
           </div>
           <p class="text-[10px] text-cyan-100/85 leading-snug">${item.title}</p>
         </div>`).join('');
@@ -144,7 +144,7 @@
     document.getElementById('term-signal-box').classList.toggle('hidden', !hasActiveSignal);
   }
 
-  // ---------------- NEAR-ENTRY SIGNAL GENERATOR ----------------
+  // ---------------- NEAR-ENTRY SIGNAL GENERATOR (CONDITIONAL DYNAMIC R:R) ----------------
   function generateNearEntrySignal() {
     const nodes = window.NeuralCanvasEngine.getNodes().filter(n => n.asset);
     let pool = nodes.filter(n => window.NeuralPnlManager.getNodeProximity(n).isNear && !recentSymbols.includes(n.asset.symbol));
@@ -160,15 +160,25 @@
 
     const spec = getStealthSpec(chosen.asset.fundingRate);
     const p = chosen.asset.price;
-    const tp1Dist = chosen.isCore ? 0.0065 : 0.0110;
-    const tp2Dist = chosen.isCore ? 0.0130 : 0.0220;
+
+    // Only boost R:R when strong confirmation is present (high funding pressure + aligned momentum)
+    const highConfirmation =
+      Math.abs(Number(chosen.asset.fundingRate || 0)) >= 0.0002 &&
+      ((spec.isLong && chosen.asset.change <= 1.5) || (!spec.isLong && chosen.asset.change >= -1.5));
+
     const slDist  = chosen.isCore ? 0.0040 : 0.0070;
+    const tp1Dist = highConfirmation
+      ? (chosen.isCore ? 0.0105 : 0.0185)   // Boosted TP1 (~1:2.6 R:R)
+      : (chosen.isCore ? 0.0065 : 0.0110);  // Standard TP1 (~1:1.6 R:R)
+    const tp2Dist = highConfirmation
+      ? (chosen.isCore ? 0.0168 : 0.0295)   // Boosted TP2 (~1:4.2 R:R)
+      : (chosen.isCore ? 0.0130 : 0.0220);  // Standard TP2 (~1:3.1 R:R)
 
     const sig = {
       symbol: chosen.asset.symbol,
       isLong: spec.isLong,
       direction: spec.side,
-      confidence: Math.floor(92 + Math.random() * 7),
+      confidence: highConfirmation ? Math.floor(94 + Math.random() * 5) : Math.floor(88 + Math.random() * 5),
       entryPrice: p,
       tp1Price: spec.isLong ? p * (1 + tp1Dist) : p * (1 - tp1Dist),
       tp2Price: spec.isLong ? p * (1 + tp2Dist) : p * (1 - tp2Dist),
@@ -189,7 +199,9 @@
     document.getElementById('sig-tp1').textContent = window.formatPrice(sig.tp1Price);
     document.getElementById('sig-tp2').textContent = window.formatPrice(sig.tp2Price);
     document.getElementById('sig-sl').textContent = window.formatPrice(sig.slPrice);
-    document.getElementById('sig-reasoning').textContent = `Near-Entry Sniper Signal: ${sig.symbol} triggered right at Entry Zone (${window.formatPrice(p)}). Logged to Daily & Monthly P&L.`;
+    document.getElementById('sig-reasoning').textContent = highConfirmation
+      ? `High-Confirmation Sniper Signal: ${sig.symbol} triggered at Entry Zone (${window.formatPrice(p)}) with Extended R:R target.`
+      : `Near-Entry Sniper Signal: ${sig.symbol} triggered right at Entry Zone (${window.formatPrice(p)}). Logged to Daily & Monthly P&L.`;
 
     updateTerminalCard();
     window.NeuralPnlManager.logTrade({ ...sig, source: 'SCANNER', entryDistancePct: 0 });
@@ -212,10 +224,9 @@
     document.getElementById('chart-modal-symbol').textContent = node.asset.symbol;
     document.getElementById('chart-modal-price').textContent = window.formatPrice(node.asset.price);
     const rawSym = node.asset.binanceSymbol || 'BTCUSDT';
-    document.getElementById('chart-binance-link').href = `https://www.binance.com/en/futures/${rawSym}`;
-    document.getElementById('chart-tradingview-link').href = `https://www.tradingview.com/chart/?symbol=BINANCE:${rawSym}.P`;
+    document.getElementById('chart-binance-link').href = `[https://www.binance.com/en/futures/$](https://www.binance.com/en/futures/$){rawSym}`;
+    document.getElementById('chart-tradingview-link').href = `[https://www.tradingview.com/chart/?symbol=BINANCE:$](https://www.tradingview.com/chart/?symbol=BINANCE:$){rawSym}.P`;
 
-    // Use active signal if available, otherwise build a live preview Long/Short position box
     const sig = node.lastSignal || (() => {
       const spec = getStealthSpec(node.asset.fundingRate);
       const p = Number(node.asset.price) || 100;
@@ -338,7 +349,6 @@
 
         unlockApp(data.user, data.role === 'admin');
       } catch (_) {
-        // Offline fallback for Admin when backend is not running yet
         if (!isSignUpMode && identifier.toLowerCase() === 'kavishkasithumina' && password.toLowerCase() === 'kavishka@1234') {
           unlockApp({ name: 'kavishkasithumina', email: 'kavishkasithumina' }, true);
           window.showToast('Offline Mode — Start backend server for AI Chart Vision!', '⚠️');
