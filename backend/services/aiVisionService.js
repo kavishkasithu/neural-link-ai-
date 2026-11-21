@@ -40,10 +40,11 @@ STEP 4 — MANDATORY LIQUIDITY SWEEP & SNIPER ENTRY TRIGGER:
   - If <= 0.35% (CRYPTO/STOCK/INDEX) or <= 0.15% (FOREX/COMMODITY): "entryProximity": "NEAR ENTRY".
   - Otherwise: "entryProximity": "FAR ENTRY - WAIT PULLBACK".
 
-STEP 5 — TARGETS, INVALIDATION & STRICT NO-TRADE RULE:
+STEP 5 — DYNAMIC CONFIRMATION-BASED R:R, TARGETS & NO-TRADE RULE:
 - "slPrice": Strictly beyond the swept liquidity swing / Wave 2 origin / invalidated OB body.
-- "tp1Price": CRT 50% Equilibrium, nearest IRL, or minimum 1:2 R:R (low-hanging fruit).
-- "tp2Price": Opposing ERL (Smooth Equal H/L, PDH/PDL) or -1.0 to -2.0 STDV / Wave 3/5 Fib target.
+- DYNAMIC R:R SCALING (DO NOT FORCE HIGH R:R ON EVERY TRADE):
+  * HIGH-CONFIRMATION SETUP (3+ pillars aligned: Liquidity Sweep/CRT + strong Displacement + Unicorn/BPR/OB + Wyckoff Spring/UTAD or Wave 3/5 impulse with a CLEAN, unobstructed LRLR path to opposing ERL): Extend targets for higher R:R (aim 1:3.0 to 1:5.0+ -> tp1Price at 50% CRT EQ / 1:2.5+, tp2Price at major opposing ERL / -2.0 STDV).
+  * STANDARD / MODERATE SETUP (nearby HTF resistance/HRLR obstacle or partial confluence): Keep conservative, realistic R:R as-is (1:1.5 to 1:2.2 -> tp1Price at nearest IRL/50% EQ, tp2Price at local swing). Never stretch TP beyond a major opposing HTF MSNR level.
 - STRICT QUALITY FILTER: If price is trapped in mid-range Equilibrium (50%) with no sweep, no displacement, or conflicting 50/50 structure, output "direction": "WAIT / NEUTRAL" and confidence < 65.
 
 OUTPUT FORMAT:
@@ -55,17 +56,17 @@ Return ONLY valid raw JSON (no markdown fences, no extra text) with this exact s
   "currentPrice": 2918.50,
   "direction": "BUY / LONG",
   "entryPrice": 2916.20,
-  "tp1Price": 2926.00,
-  "tp2Price": 2938.50,
+  "tp1Price": 2928.00,
+  "tp2Price": 2944.50,
   "slPrice": 2909.80,
-  "riskReward": "1:2.8",
-  "confidence": 91,
+  "riskReward": "1:3.8",
+  "confidence": 92,
   "entryDistancePct": 0.08,
   "entryProximity": "NEAR ENTRY",
   "trendBias": "BULLISH",
   "keyLevels": {
     "support": "2910.00 - 2915.00 (Fresh MSNR OCL + Discount OB)",
-    "resistance": "2926.00 (50% CRT EQ) / 2938.50 (Smooth ERL)"
+    "resistance": "2928.00 (50% CRT EQ) / 2944.50 (Smooth ERL)"
   },
   "setupType": "CRT Sweep + ICT Unicorn (Breaker + FVG) / Wyckoff LPS",
   "reasoning": "2-3 concise institutional sentences citing the exact liquidity sweep/CRT manipulation, MSS/CISD displacement, PD array/MSNR level, wave/Wyckoff context, and DOL target visible on the chart."
@@ -92,11 +93,6 @@ function cleanJsonResponse(text) {
   return JSON.parse(cleaned);
 }
 
-/**
- * Stealth Contrarian Funding Rate Confluence (Crypto Perpetuals Only)
- * Negative funding (< 0) supports BUY / LONG squeeze; Positive funding (>= 0) supports SELL / SHORT squeeze.
- * Adjusts internal confidence silently without leaking funding rate details into user-facing reasoning.
- */
 async function applyStealthFundingConfluence(signal) {
   try {
     if (!signal || signal.assetClass !== 'CRYPTO' || !signal.pair) return signal;
