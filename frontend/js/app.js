@@ -196,7 +196,7 @@
     window.showToast(`${sig.isLong ? '🟢 BUY' : '🔴 SELL'} Near-Entry Signal: ${sig.symbol}`, sig.isLong ? '🚀' : '🔻');
   }
 
-  // ---------------- LIVE CANDLESTICK CHART MODAL ----------------
+  // ---------------- LIVE TRADINGVIEW CHART + LONG/SHORT POSITION MODAL ----------------
   window.__openChartModal = async function (nodeIdx) {
     const nodes = window.NeuralCanvasEngine.getNodes();
     const node = nodes[nodeIdx] || nodes[0];
@@ -215,67 +215,32 @@
     document.getElementById('chart-binance-link').href = `https://www.binance.com/en/futures/${rawSym}`;
     document.getElementById('chart-tradingview-link').href = `https://www.tradingview.com/chart/?symbol=BINANCE:${rawSym}.P`;
 
-    // Fetch Klines from Backend Proxy
-    let klines = [];
-    try {
-      const resp = await fetch(`${window.NEURAL_CONFIG.API_BASE_URL}/api/market/klines?symbol=${rawSym}&interval=15m&limit=56`);
-      const data = await resp.json();
-      if (data.ok) klines = data.klines;
-    } catch (_) {}
+    // Use active signal if available, otherwise build a live preview Long/Short position box
+    const sig = node.lastSignal || (() => {
+      const spec = getStealthSpec(node.asset.fundingRate);
+      const p = Number(node.asset.price) || 100;
+      const tpDist = node.isCore ? 0.0085 : 0.0140;
+      const slDist = node.isCore ? 0.0040 : 0.0065;
+      return {
+        isLong: spec.isLong,
+        entryPrice: p,
+        tp1Price: spec.isLong ? p * (1 + tpDist) : p * (1 - tpDist),
+        slPrice:  spec.isLong ? p * (1 - slDist) : p * (1 + slDist)
+      };
+    })();
 
-    if (klines.length < 10) {
-      let p = node.asset.price * 0.99;
-      for (let i = 0; i < 50; i++) {
-        const o = p, c = o * (1 + (Math.random() - 0.48) * 0.005);
-        klines.push({ open: o, close: c, high: Math.max(o, c) * 1.002, low: Math.min(o, c) * 0.998 });
-        p = c;
-      }
-    }
-
-    drawKlines(klines, node.lastSignal);
-  };
-
-  function drawKlines(klines, sig) {
-    const c = document.getElementById('klines-chart-canvas');
-    if (!c) return;
-    const rect = c.getBoundingClientRect();
-    c.width = (rect.width || 720) * 2;
-    c.height = (rect.height || 320) * 2;
-    const g = c.getContext('2d');
-    g.scale(2, 2);
-    const w = rect.width || 720, h = rect.height || 320;
-
-    g.fillStyle = '#020910';
-    g.fillRect(0, 0, w, h);
-
-    let minP = Infinity, maxP = -Infinity;
-    klines.forEach(k => { minP = Math.min(minP, k.low); maxP = Math.max(maxP, k.high); });
-    const pad = (maxP - minP) * 0.12 || maxP * 0.01;
-    minP -= pad; maxP += pad;
-
-    const toY = (p) => 16 + (h - 32) - ((p - minP) / (maxP - minP)) * (h - 32);
-    const step = (w - 84) / klines.length;
-
-    klines.forEach((k, i) => {
-      const x = 12 + i * step + step * 0.5;
-      const bull = k.close >= k.open;
-      g.strokeStyle = bull ? '#00ff88' : '#ff1e42';
-      g.fillStyle = g.strokeStyle;
-      g.beginPath(); g.moveTo(x, toY(k.high)); g.lineTo(x, toY(k.low)); g.stroke();
-      const top = Math.min(toY(k.open), toY(k.close));
-      g.fillRect(x - step * 0.3, top, Math.max(2, step * 0.6), Math.max(2, Math.abs(toY(k.close) - toY(k.open))));
-    });
-
-    if (sig) {
-      [[sig.entryPrice, '#00f0ff', 'ENT'], [sig.tp1Price, '#00ff88', 'TP1'], [sig.slPrice, '#ff1e42', 'SL']].forEach(([val, col, lbl]) => {
-        const y = toY(val);
-        g.strokeStyle = col; g.setLineDash([4, 4]);
-        g.beginPath(); g.moveTo(12, y); g.lineTo(w - 72, y); g.stroke(); g.setLineDash([]);
-        g.fillStyle = col; g.font = 'bold 10px monospace';
-        g.fillText(`${lbl} ${window.formatPrice(val)}`, w - 70, y + 3);
+    const canvasEl = document.getElementById('klines-chart-canvas');
+    if (window.TVPositionChart && canvasEl) {
+      await window.TVPositionChart.renderIntoModal(canvasEl, {
+        symbol: node.asset.symbol,
+        timeframe: '15m',
+        entry: sig.entryPrice,
+        tp: sig.tp1Price,
+        sl: sig.slPrice,
+        isLong: sig.isLong
       });
     }
-  }
+  };
 
   // ---------------- RR CALCULATOR INTEGRATION (CRYPTO + FOREX + STOCKS) ----------------
   function calculateRR() {
