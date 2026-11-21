@@ -1,6 +1,6 @@
 /**
  * TradingView Live Candlestick Chart + Long/Short Position Tool Box Overlay
- * Fits inside the exact existing Chart Modal container without changing modal size.
+ * Auto-syncs Entry/TP/SL to real live candle price so the Position Box is ALWAYS visible.
  */
 window.TVPositionChart = (function () {
   let chart = null;
@@ -9,6 +9,7 @@ window.TVPositionChart = (function () {
   let overlayCtx = null;
   let resizeObserver = null;
   let currentSetup = null;
+  let rafId = null;
 
   function toBinanceSymbol(symbol) {
     const clean = String(symbol || 'BTCUSDT').toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -33,7 +34,6 @@ window.TVPositionChart = (function () {
         close: parseFloat(k[4])
       }));
     } catch (_) {
-      // Fallback realistic candles if pair is Forex/Stock not on Binance
       const now = Math.floor(Date.now() / 1000);
       const candles = [];
       let p = fallbackPrice * 0.992;
@@ -53,10 +53,16 @@ window.TVPositionChart = (function () {
   function drawPositionBox() {
     if (!overlayCanvas || !overlayCtx || !chart || !candleSeries || !currentSetup) return;
 
-    const rect = overlayCanvas.parentElement.getBoundingClientRect();
+    const parent = overlayCanvas.parentElement;
+    if (!parent) return;
+    const rect = parent.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    overlayCanvas.width = rect.width * dpr;
-    overlayCanvas.height = rect.height * dpr;
+    if (overlayCanvas.width !== Math.round(rect.width * dpr) || overlayCanvas.height !== Math.round(rect.height * dpr)) {
+      overlayCanvas.width = Math.round(rect.width * dpr);
+      overlayCanvas.height = Math.round(rect.height * dpr);
+    }
     overlayCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
     overlayCtx.clearRect(0, 0, rect.width, rect.height);
 
@@ -67,38 +73,38 @@ window.TVPositionChart = (function () {
 
     if (yEntry === null || yTp === null || ySl === null) return;
 
-    // Position Box spans from ~62% of chart width to right price axis (~88%)
-    const boxLeft = Math.floor(rect.width * 0.62);
-    const boxRight = Math.floor(rect.width - 78);
-    const boxW = Math.max(80, boxRight - boxLeft);
+    // Position Box from ~58% width to right price scale
+    const boxLeft = Math.floor(rect.width * 0.58);
+    const boxRight = Math.floor(rect.width - 74);
+    const boxW = Math.max(90, boxRight - boxLeft);
 
-    // 1. Profit Zone Box (Entry <-> TP) — TradingView Green/Teal Tint
+    // 1. Profit Zone Box (Entry <-> TP) — Green Tint
     const profitTop = Math.min(yEntry, yTp);
-    const profitH = Math.abs(yTp - yEntry);
-    overlayCtx.fillStyle = 'rgba(0, 230, 118, 0.16)';
+    const profitH = Math.max(2, Math.abs(yTp - yEntry));
+    overlayCtx.fillStyle = 'rgba(0, 230, 118, 0.18)';
     overlayCtx.fillRect(boxLeft, profitTop, boxW, profitH);
-    overlayCtx.strokeStyle = 'rgba(0, 230, 118, 0.55)';
+    overlayCtx.strokeStyle = 'rgba(0, 230, 118, 0.7)';
     overlayCtx.lineWidth = 1;
     overlayCtx.strokeRect(boxLeft, profitTop, boxW, profitH);
 
-    // 2. Stop Loss Zone Box (Entry <-> SL) — TradingView Red Tint
+    // 2. Stop Loss Zone Box (Entry <-> SL) — Red Tint
     const lossTop = Math.min(yEntry, ySl);
-    const lossH = Math.abs(ySl - yEntry);
-    overlayCtx.fillStyle = 'rgba(255, 61, 90, 0.18)';
+    const lossH = Math.max(2, Math.abs(ySl - yEntry));
+    overlayCtx.fillStyle = 'rgba(255, 61, 90, 0.20)';
     overlayCtx.fillRect(boxLeft, lossTop, boxW, lossH);
-    overlayCtx.strokeStyle = 'rgba(255, 61, 90, 0.55)';
+    overlayCtx.strokeStyle = 'rgba(255, 61, 90, 0.7)';
     overlayCtx.lineWidth = 1;
     overlayCtx.strokeRect(boxLeft, lossTop, boxW, lossH);
 
-    // 3. Entry Center Divider Line
+    // 3. Entry Center Line
     overlayCtx.beginPath();
     overlayCtx.moveTo(boxLeft, yEntry);
     overlayCtx.lineTo(boxRight, yEntry);
-    overlayCtx.strokeStyle = 'rgba(148, 163, 184, 0.9)';
-    overlayCtx.lineWidth = 1.25;
+    overlayCtx.strokeStyle = 'rgba(56, 189, 248, 0.95)';
+    overlayCtx.lineWidth = 1.5;
     overlayCtx.stroke();
 
-    // 4. Risk:Reward Badge inside the box
+    // 4. Risk:Reward Badge inside the Position Box
     const risk = Math.abs(entry - sl) || 1;
     const reward = Math.abs(tp - entry);
     const rr = (reward / risk).toFixed(2);
@@ -106,31 +112,40 @@ window.TVPositionChart = (function () {
 
     overlayCtx.font = '700 10px "JetBrains Mono", monospace';
     const textW = overlayCtx.measureText(labelText).width;
-    const badgeX = boxLeft + (boxW - textW - 14) / 2;
+    const badgeW = textW + 14;
+    const badgeX = boxLeft + (boxW - badgeW) / 2;
     const badgeY = yEntry - 10;
 
-    overlayCtx.fillStyle = 'rgba(10, 18, 28, 0.92)';
-    overlayCtx.strokeStyle = isLong ? 'rgba(0, 230, 118, 0.8)' : 'rgba(255, 61, 90, 0.8)';
+    overlayCtx.fillStyle = 'rgba(6, 12, 20, 0.94)';
+    overlayCtx.strokeStyle = isLong ? 'rgba(0, 230, 118, 0.9)' : 'rgba(255, 61, 90, 0.9)';
     overlayCtx.lineWidth = 1;
     overlayCtx.beginPath();
-    overlayCtx.roundRect(badgeX, badgeY, textW + 14, 20, 4);
+    overlayCtx.roundRect(badgeX, badgeY, badgeW, 20, 4);
     overlayCtx.fill();
     overlayCtx.stroke();
 
     overlayCtx.fillStyle = '#f8fafc';
     overlayCtx.textAlign = 'center';
     overlayCtx.textBaseline = 'middle';
-    overlayCtx.fillText(labelText, badgeX + (textW + 14) / 2, badgeY + 10);
+    overlayCtx.fillText(labelText, badgeX + badgeW / 2, badgeY + 10);
+  }
+
+  function startOverlaySync() {
+    if (rafId) cancelAnimationFrame(rafId);
+    const loop = () => {
+      if (!chart || !overlayCanvas || !document.body.contains(overlayCanvas)) return;
+      drawPositionBox();
+      rafId = requestAnimationFrame(loop);
+    };
+    rafId = requestAnimationFrame(loop);
   }
 
   async function renderIntoModal(targetCanvasOrContainer, setup) {
     if (!window.LightweightCharts || !targetCanvasOrContainer) return;
 
-    // Replace/wrap the existing chart canvas inside the exact same container size
     const parent = targetCanvasOrContainer.parentElement;
     parent.style.position = 'relative';
 
-    // Hide the old 2D canvas so we don't break any existing DOM references
     if (targetCanvasOrContainer.tagName === 'CANVAS') {
       targetCanvasOrContainer.style.display = 'none';
     }
@@ -144,13 +159,34 @@ window.TVPositionChart = (function () {
     }
     mount.innerHTML = '';
 
-    if (chart) {
-      try { chart.remove(); } catch (_) {}
-      chart = null;
-    }
+    if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+    if (chart) { try { chart.remove(); } catch (_) {} chart = null; }
 
     const width = mount.clientWidth || 720;
     const height = mount.clientHeight || 300;
+
+    const candles = await fetchLiveCandles(setup.symbol, setup.timeframe || '15m', setup.entry);
+    const livePrice = candles.length ? candles[candles.length - 1].close : Number(setup.entry);
+
+    // Auto-sync Entry / TP / SL if node price was stale compared to real live Binance candles
+    let entry = Number(setup.entry);
+    let tp = Number(setup.tp);
+    let sl = Number(setup.sl);
+    const isLong = setup.isLong !== undefined ? setup.isLong : tp > entry;
+
+    if (!entry || Math.abs(entry - livePrice) / livePrice > 0.12) {
+      const tpPct = entry && tp ? Math.min(0.03, Math.max(0.006, Math.abs(tp - entry) / entry)) : 0.012;
+      const slPct = entry && sl ? Math.min(0.015, Math.max(0.003, Math.abs(entry - sl) / entry)) : 0.0055;
+      entry = livePrice;
+      tp = isLong ? livePrice * (1 + tpPct) : livePrice * (1 - tpPct);
+      sl = isLong ? livePrice * (1 - slPct) : livePrice * (1 + slPct);
+
+      // Keep modal header price synced with live chart
+      const priceEl = document.getElementById('chart-modal-price');
+      if (priceEl && window.formatPrice) priceEl.textContent = window.formatPrice(livePrice);
+    }
+
+    currentSetup = { entry, tp, sl, isLong };
 
     chart = window.LightweightCharts.createChart(mount, {
       width,
@@ -166,8 +202,15 @@ window.TVPositionChart = (function () {
         horzLines: { color: 'rgba(148, 163, 184, 0.06)' }
       },
       crosshair: { mode: window.LightweightCharts.CrosshairMode.Normal },
-      rightPriceScale: { borderColor: 'rgba(148, 163, 184, 0.15)' },
-      timeScale: { borderColor: 'rgba(148, 163, 184, 0.15)', timeVisible: true }
+      rightPriceScale: {
+        borderColor: 'rgba(148, 163, 184, 0.15)',
+        scaleMargins: { top: 0.12, bottom: 0.12 }
+      },
+      timeScale: {
+        borderColor: 'rgba(148, 163, 184, 0.15)',
+        timeVisible: true,
+        rightOffset: 14
+      }
     });
 
     candleSeries = chart.addCandlestickSeries({
@@ -176,19 +219,20 @@ window.TVPositionChart = (function () {
       borderUpColor: '#00e676',
       borderDownColor: '#ff3d5a',
       wickUpColor: '#00e676',
-      wickDownColor: '#ff3d5a'
+      wickDownColor: '#ff3d5a',
+      autoscaleInfoProvider: (original) => {
+        const res = original();
+        if (res && res.priceRange) {
+          res.priceRange.minValue = Math.min(res.priceRange.minValue, sl, entry, tp);
+          res.priceRange.maxValue = Math.max(res.priceRange.maxValue, sl, entry, tp);
+        }
+        return res;
+      }
     });
 
-    const candles = await fetchLiveCandles(setup.symbol, setup.timeframe || '15m', setup.entry);
     candleSeries.setData(candles);
 
-    const entry = Number(setup.entry);
-    const tp = Number(setup.tp);
-    const sl = Number(setup.sl);
-    const isLong = setup.isLong !== undefined ? setup.isLong : tp > entry;
-    currentSetup = { entry, tp, sl, isLong };
-
-    // Add TradingView Price Lines (TP, Entry, SL) on Right Axis
+    // TradingView Price Lines (TP, ENT, SL) on Right Axis
     candleSeries.createPriceLine({
       price: tp,
       color: '#00e676',
@@ -214,17 +258,13 @@ window.TVPositionChart = (function () {
       title: 'SL'
     });
 
-    // Add transparent canvas overlay for the shaded Long/Short Position Box
     overlayCanvas = document.createElement('canvas');
     overlayCanvas.style.cssText = 'position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:5;';
     mount.appendChild(overlayCanvas);
     overlayCtx = overlayCanvas.getContext('2d');
 
     chart.timeScale().fitContent();
-
-    // Redraw position box whenever user zooms, pans, or resizes
-    chart.timeScale().subscribeVisibleLogicalRangeChange(drawPositionBox);
-    setTimeout(drawPositionBox, 60);
+    startOverlaySync();
 
     if (resizeObserver) resizeObserver.disconnect();
     resizeObserver = new ResizeObserver(() => {
