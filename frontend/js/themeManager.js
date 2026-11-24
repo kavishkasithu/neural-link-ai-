@@ -1,6 +1,5 @@
 /**
  * ADMIN-ONLY THEME STUDIO (10 THEMES + CRYPTO BUBBLES PHYSICS ENGINE)
- * Guaranteed Admin visibility + high-specificity theme styling across UI & widgets.
  */
 window.NeuralThemeManager = (function () {
   const STORAGE_KEY = 'neural_ai_active_theme';
@@ -216,10 +215,9 @@ window.NeuralThemeManager = (function () {
     style.textContent = THEMES.map(t => t.css).join('\n');
   }
 
-  // ---------------- CRYPTO BUBBLES PHYSICS ENGINE ----------------
   function initBubblesData(w, h) {
-    const nodes = window.NeuralCanvasEngine ? window.NeuralCanvasEngine.getNodes().filter(n => n.asset) : [];
-    bubbles = nodes.map((n) => {
+    const rawNodes = window.NeuralCanvasEngine ? window.NeuralCanvasEngine.getNodes().filter(n => n.asset) : [];
+    bubbles = rawNodes.map((n) => {
       const chg = Number(n.asset.change || 0);
       const r = Math.max(30, Math.min(72, 34 + Math.abs(chg) * 3.8 + (n.isCore ? 8 : 0)));
       return {
@@ -376,7 +374,6 @@ window.NeuralThemeManager = (function () {
     if (neuralCanvas) neuralCanvas.style.opacity = '1';
   }
 
-  // ---------------- APPLY THEME ----------------
   function applyTheme(themeId, silent = false) {
     const found = THEMES.find(t => t.id === themeId) || THEMES[0];
     activeTheme = found.id;
@@ -423,7 +420,6 @@ window.NeuralThemeManager = (function () {
     });
   }
 
-  // ---------------- ADMIN-ONLY FLOATING STUDIO BUTTON + PANEL ----------------
   function isAdminSessionActive() {
     const adminBtn = document.getElementById('admin-access-btn');
     const sessionTxt = (document.getElementById('user-session-email')?.textContent || '').toUpperCase();
