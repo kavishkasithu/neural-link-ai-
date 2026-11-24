@@ -1,8 +1,9 @@
 /**
  * MAIN FRONTEND APPLICATION CONTROLLER
- * Includes: Trading-Themed Login Screen (Live Ticker + Animated Candles + 4 Login Themes),
- * Expanded Trader Sign Up Form, Real-Time Binance Vision Prices, 15m Structure Signals,
- * Pro Admin Command Center, 10 Full-Transform Dashboard Themes, and Crypto Bubbles Engine.
+ * Includes: Live TradingView Login Chart (BTC + Main Forex Pairs),
+ * Backend Binance-API-Key Live Ticker, Expanded Trader Sign Up Form,
+ * User-Accessible Themes Panel (Themes Only), Market Type Badge + Green BUY / Red SELL Signal Bars,
+ * Enhanced Liquid Glassmorphism UI, Real-Time 15m Structure Signals, and Admin Command Center.
  */
 (function () {
   let currentUser = null;
@@ -13,7 +14,8 @@
   let autoSignalTimer = null;
 
   const THEME_STORAGE_KEY = 'neural_ai_active_theme';
-  const LOGIN_THEME_KEY = 'neural_ai_login_theme';
+  const GLASS_STORAGE_KEY = 'neural_ai_user_glass_opacity';
+  const LOGIN_PAIR_KEY = 'neural_ai_login_tv_symbol';
   const SETTINGS_STORAGE_KEY = 'neural_admin_global_settings';
 
   const DEFAULT_ADMIN_SETTINGS = {
@@ -25,7 +27,7 @@
     signalsPaused: false,
     autoSignalSec: 0,
     defaultLeverage: 10,
-    glassOpacity: 88,
+    glassOpacity: 72,
     showFloatingThemeBtn: true
   };
 
@@ -47,6 +49,21 @@
     return merged;
   }
 
+  function getActiveGlassOpacity() {
+    const userSaved = Number(localStorage.getItem(GLASS_STORAGE_KEY));
+    if (!Number.isNaN(userSaved) && userSaved >= 40 && userSaved <= 96) return userSaved;
+    const adm = Number(loadAdminSettings().glassOpacity);
+    return (!Number.isNaN(adm) && adm >= 40 && adm <= 96) ? adm : 72;
+  }
+
+  function setGlassOpacity(val) {
+    const clamped = Math.max(40, Math.min(96, Number(val) || 72));
+    localStorage.setItem(GLASS_STORAGE_KEY, String(clamped));
+    document.documentElement.style.setProperty('--neural-glass-alpha', (clamped / 100).toFixed(2));
+    document.querySelectorAll('.neural-glass-opacity-val').forEach(el => { el.textContent = `${clamped}%`; });
+    document.querySelectorAll('.neural-glass-opacity-slider').forEach(sl => { sl.value = String(clamped); });
+  }
+
   window.NEURAL_ADMIN_SETTINGS = loadAdminSettings();
 
   const on = (id, ev, fn) => {
@@ -62,6 +79,16 @@
     if (n < 100) return '$' + n.toFixed(2);
     return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
+
+  function formatMarketRate(price, category, label) {
+    const n = Number(price);
+    if (!n || Number.isNaN(n)) return '--';
+    if (category === 'FOREX') {
+      if (String(label).includes('JPY')) return n.toFixed(3);
+      return n.toFixed(5);
+    }
+    return window.formatPrice(n);
+  }
 
   window.showToast = function (msg, icon = '⚡') {
     const toast = document.getElementById('neural-toast');
@@ -106,82 +133,145 @@
   }
 
   // =========================================================================
-  // TRADING-THEMED LOGIN SCREEN (LIVE TICKER + CANDLESTICK CANVAS + 4 THEMES)
+  // SIGNAL MARKET TYPE DETECTOR + GREEN BUY / RED SELL BAR RENDERER
   // =========================================================================
-  let loginRafId = null;
-  let activeLoginTheme = localStorage.getItem(LOGIN_THEME_KEY) || 'candle_emerald';
+  function detectSignalMarketType(symbol, explicitClass) {
+    const cls = String(explicitClass || '').toUpperCase().trim();
+    if (['FOREX', 'STOCK', 'CRYPTO', 'COMMODITY', 'INDEX'].includes(cls)) return cls;
 
-  const LOGIN_THEMES = {
-    candle_emerald: {
-      name: '📊 Quant Emerald',
-      bg: 'radial-gradient(circle at 50% 25%, #04241a 0%, #020a12 65%, #010409 100%)',
-      grid: 'rgba(16, 185, 129, 0.07)',
-      up: 'rgba(16, 185, 129, 0.55)',
-      down: 'rgba(244, 63, 94, 0.50)',
-      ema: 'rgba(56, 189, 248, 0.75)',
-      border: 'rgba(16, 185, 129, 0.55)',
-      glow: 'rgba(16, 185, 129, 0.22)',
-      accent: '#34d399'
-    },
-    bloomberg_amber: {
-      name: '🟧 Bloomberg Desk',
-      bg: 'radial-gradient(circle at 50% 20%, #241302 0%, #090603 65%, #030201 100%)',
-      grid: 'rgba(255, 140, 0, 0.07)',
-      up: 'rgba(255, 165, 0, 0.62)',
-      down: 'rgba(239, 68, 68, 0.48)',
-      ema: 'rgba(253, 224, 71, 0.78)',
-      border: 'rgba(255, 140, 0, 0.60)',
-      glow: 'rgba(255, 140, 0, 0.22)',
-      accent: '#fb923c'
-    },
-    dubai_gold: {
-      name: '👑 Gold Vault',
-      bg: 'radial-gradient(circle at 50% 20%, #291e05 0%, #0a0803 65%, #030201 100%)',
-      grid: 'rgba(251, 191, 36, 0.06)',
-      up: 'rgba(251, 191, 36, 0.60)',
-      down: 'rgba(244, 63, 94, 0.42)',
-      ema: 'rgba(254, 240, 138, 0.80)',
-      border: 'rgba(251, 191, 36, 0.62)',
-      glow: 'rgba(245, 158, 11, 0.24)',
-      accent: '#fbbf24'
-    },
-    cyber_violet: {
-      name: '⛩️ Cyber Quant',
-      bg: 'radial-gradient(circle at 30% 20%, #25063b 0%, #090418 65%, #030208 100%)',
-      grid: 'rgba(236, 72, 153, 0.07)',
-      up: 'rgba(34, 211, 238, 0.60)',
-      down: 'rgba(236, 72, 153, 0.55)',
-      ema: 'rgba(192, 132, 252, 0.82)',
-      border: 'rgba(236, 72, 153, 0.60)',
-      glow: 'rgba(168, 85, 247, 0.26)',
-      accent: '#f472b6'
+    const raw = String(symbol || '').toUpperCase().replace(/[^A-Z0-9/]/g, '');
+    const clean = raw.replace(/\//g, '');
+
+    if (/(XAU|XAG|GOLD|SILVER|WTI|USOIL|BRENT|PAXG)/.test(clean)) return 'FOREX';
+    if (/(EURUSD|GBPUSD|USDJPY|AUDUSD|USDCAD|USDCHF|NZDUSD|EURGBP|EURJPY|GBPJPY|EURUSDT)/.test(clean)) return 'FOREX';
+    if (/(AAPL|NVDA|TSLA|MSFT|AMZN|META|GOOGL|GOOG|AMD|NFLX|INTC|COIN|SPY|QQQ|NAS100|US30|SPX|US500|NDX)/.test(clean)) return 'STOCK';
+    return 'CRYPTO';
+  }
+
+  function renderSignalHeaderBar(sig) {
+    if (!sig) return;
+    const marketType = detectSignalMarketType(sig.symbol || sig.pair, sig.assetClass);
+    const isLong = sig.isLong !== undefined
+      ? Boolean(sig.isLong)
+      : String(sig.direction || '').toUpperCase().includes('BUY') || String(sig.direction || '').toUpperCase().includes('LONG');
+
+    const typeStyleMap = {
+      FOREX:     { icon: '💱', label: 'FOREX',  bg: 'rgba(56, 189, 248, 0.18)', border: 'rgba(56, 189, 248, 0.65)', color: '#7dd3fc' },
+      STOCK:     { icon: '📈', label: 'STOCK',  bg: 'rgba(168, 85, 247, 0.20)', border: 'rgba(192, 132, 252, 0.65)', color: '#e9d5ff' },
+      CRYPTO:    { icon: '🪙', label: 'CRYPTO', bg: 'rgba(245, 158, 11, 0.20)', border: 'rgba(251, 191, 36, 0.65)', color: '#fde68a' },
+      COMMODITY: { icon: '🥇', label: 'FOREX / GOLD', bg: 'rgba(251, 191, 36, 0.20)', border: 'rgba(251, 191, 36, 0.7)', color: '#fef08a' },
+      INDEX:     { icon: '📊', label: 'STOCK / INDEX', bg: 'rgba(168, 85, 247, 0.20)', border: 'rgba(192, 132, 252, 0.65)', color: '#e9d5ff' }
+    };
+    const tStyle = typeStyleMap[marketType] || typeStyleMap.CRYPTO;
+
+    const dirBadge = document.getElementById('sig-direction-badge');
+    if (dirBadge) {
+      // Inject small market type pill directly ABOVE the Buy/Sell bar
+      let typeRow = document.getElementById('sig-market-type-row');
+      if (!typeRow) {
+        typeRow = document.createElement('div');
+        typeRow.id = 'sig-market-type-row';
+        typeRow.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:6px;';
+        dirBadge.parentElement.insertBefore(typeRow, dirBadge);
+      }
+
+      typeRow.innerHTML = `
+        <span style="display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:999px; font-family:'JetBrains Mono',monospace; font-size:9px; font-weight:800; letter-spacing:0.08em; background:${tStyle.bg}; border:1px solid ${tStyle.border}; color:${tStyle.color};">
+          <span>${tStyle.icon}</span><span>${tStyle.label}</span>
+        </span>
+        <span style="font-family:'JetBrains Mono',monospace; font-size:9px; font-weight:700; color:#94a3b8;">
+          ${sig.symbol || sig.pair || ''} • ${sig.confidence || 88}% LIVE
+        </span>
+      `;
+
+      // Full-width Green BUY LONG bar OR Red SELL SHORT bar
+      dirBadge.textContent = isLong ? '▲  BUY / LONG' : '▼  SELL / SHORT';
+      dirBadge.style.cssText = isLong
+        ? [
+            'display:block', 'width:100%', 'text-align:center',
+            'padding:7px 10px', 'border-radius:8px', 'margin-bottom:6px',
+            'background:linear-gradient(90deg, rgba(16,185,129,0.92), rgba(5,150,105,0.95))',
+            'border:1px solid rgba(110,231,183,0.9)',
+            'color:#ecfdf5', 'font-family:"JetBrains Mono",monospace',
+            'font-size:11px', 'font-weight:900', 'letter-spacing:0.1em',
+            'box-shadow:0 0 18px rgba(16,185,129,0.45), inset 0 1px 0 rgba(255,255,255,0.3)'
+          ].join(';')
+        : [
+            'display:block', 'width:100%', 'text-align:center',
+            'padding:7px 10px', 'border-radius:8px', 'margin-bottom:6px',
+            'background:linear-gradient(90deg, rgba(244,63,94,0.92), rgba(225,29,72,0.95))',
+            'border:1px solid rgba(253,164,175,0.9)',
+            'color:#fff1f2', 'font-family:"JetBrains Mono",monospace',
+            'font-size:11px', 'font-weight:900', 'letter-spacing:0.1em',
+            'box-shadow:0 0 18px rgba(244,63,94,0.45), inset 0 1px 0 rgba(255,255,255,0.3)'
+          ].join(';');
     }
-  };
 
-  function applyLoginScreenTheme(themeKey) {
-    const t = LOGIN_THEMES[themeKey] || LOGIN_THEMES.candle_emerald;
-    activeLoginTheme = LOGIN_THEMES[themeKey] ? themeKey : 'candle_emerald';
-    localStorage.setItem(LOGIN_THEME_KEY, activeLoginTheme);
-
-    const overlay = document.getElementById('boot-intro-overlay');
-    if (overlay) overlay.style.background = t.bg;
-
-    const form = document.getElementById('user-auth-form');
-    const card = form ? (form.closest('[class*="rounded"]') || form.parentElement) : null;
-    if (card && card !== overlay) {
-      card.style.position = 'relative';
-      card.style.zIndex = '5';
-      card.style.background = 'rgba(6, 11, 22, 0.84)';
-      card.style.backdropFilter = 'blur(18px)';
-      card.style.border = `1px solid ${t.border}`;
-      card.style.boxShadow = `0 16px 48px rgba(0,0,0,0.75), 0 0 32px ${t.glow}`;
+    // Also style top floating signal alert banner if present
+    const alertBanner = document.getElementById('signal-alert-banner');
+    if (alertBanner) {
+      alertBanner.classList.remove('hidden');
+      alertBanner.innerHTML = `
+        <div style="display:flex; flex-direction:column; gap:4px; min-width:250px; padding:8px 12px; border-radius:12px; backdrop-filter:blur(22px) saturate(180%); background:${isLong ? 'rgba(4,34,22,0.82)' : 'rgba(42,6,14,0.82)'}; border:1px solid ${isLong ? 'rgba(52,211,153,0.75)' : 'rgba(251,113,133,0.75)'}; box-shadow:0 10px 30px rgba(0,0,0,0.55), 0 0 22px ${isLong ? 'rgba(16,185,129,0.32)' : 'rgba(244,63,94,0.32)'}; font-family:'JetBrains Mono',monospace;">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+            <span style="padding:1px 7px; border-radius:999px; font-size:8.5px; font-weight:800; background:${tStyle.bg}; border:1px solid ${tStyle.border}; color:${tStyle.color};">${tStyle.icon} ${tStyle.label}</span>
+            <span style="font-size:10px; font-weight:800; color:#f8fafc;">${sig.symbol || sig.pair || ''} @ ${window.formatPrice(sig.entryPrice)}</span>
+          </div>
+          <div style="width:100%; text-align:center; padding:4px 8px; border-radius:6px; font-size:10px; font-weight:900; letter-spacing:0.08em; color:#ffffff; background:${isLong ? 'linear-gradient(90deg,#10b981,#059669)' : 'linear-gradient(90deg,#f43f5e,#e11d48)'};">
+            ${isLong ? '▲ BUY / LONG SIGNAL' : '▼ SELL / SHORT SIGNAL'} • ${sig.confidence || 88}%
+          </div>
+        </div>
+      `;
     }
+  }
 
-    document.querySelectorAll('.login-theme-pill-btn').forEach(btn => {
-      const act = btn.dataset.loginTheme === activeLoginTheme;
-      btn.style.borderColor = act ? t.accent : 'rgba(148,163,184,0.28)';
-      btn.style.background = act ? 'rgba(15, 23, 42, 0.96)' : 'rgba(6, 12, 24, 0.72)';
-      btn.style.color = act ? t.accent : '#94a3b8';
+  window.renderNeuralSignalBar = renderSignalHeaderBar;
+
+  // =========================================================================
+  // LIVE TRADINGVIEW LOGIN SCREEN (REAL TV CHART + BINANCE & FX LIVE TICKER)
+  // =========================================================================
+  const LOGIN_TV_PAIRS = [
+    { label: 'BTC/USDT', tvSymbol: 'BINANCE:BTCUSDT' },
+    { label: 'ETH/USDT', tvSymbol: 'BINANCE:ETHUSDT' },
+    { label: 'EUR/USD',  tvSymbol: 'FX:EURUSD' },
+    { label: 'GBP/USD',  tvSymbol: 'FX:GBPUSD' },
+    { label: 'XAU/USD',  tvSymbol: 'OANDA:XAUUSD' },
+    { label: 'USD/JPY',  tvSymbol: 'FX:USDJPY' },
+    { label: 'SOL/USDT', tvSymbol: 'BINANCE:SOLUSDT' }
+  ];
+
+  let activeLoginTvSymbol = localStorage.getItem(LOGIN_PAIR_KEY) || 'BINANCE:BTCUSDT';
+  let loginCardHiddenForChart = false;
+
+  function buildTradingViewEmbedUrl(tvSymbol) {
+    const params = new URLSearchParams({
+      symbol: tvSymbol,
+      interval: '15',
+      theme: 'dark',
+      style: '1',
+      locale: 'en',
+      timezone: 'Asia/Colombo',
+      hide_top_toolbar: '0',
+      hide_legend: '0',
+      save_image: '0',
+      allow_symbol_change: '1',
+      calendar: '0'
+    });
+    return `https://s.tradingview.com/widgetembed/?${params.toString()}`;
+  }
+
+  function setLoginTradingViewSymbol(tvSymbol) {
+    activeLoginTvSymbol = tvSymbol;
+    localStorage.setItem(LOGIN_PAIR_KEY, tvSymbol);
+
+    const iframe = document.getElementById('login-live-tv-iframe');
+    if (iframe) iframe.src = buildTradingViewEmbedUrl(tvSymbol);
+
+    document.querySelectorAll('.login-tv-pair-btn').forEach(btn => {
+      const act = btn.dataset.tvSymbol === tvSymbol;
+      btn.style.borderColor = act ? '#22d3ee' : 'rgba(148,163,184,0.28)';
+      btn.style.background = act ? 'rgba(34,211,238,0.22)' : 'rgba(6,12,24,0.78)';
+      btn.style.color = act ? '#67e8f9' : '#94a3b8';
     });
   }
 
@@ -189,52 +279,83 @@
     const track = document.getElementById('login-live-ticker-track');
     if (!track) return;
 
-    const pairs = [
-      { sym: 'BTCUSDT', label: 'BTC/USDT' },
-      { sym: 'ETHUSDT', label: 'ETH/USDT' },
-      { sym: 'SOLUSDT', label: 'SOL/USDT' },
-      { sym: 'BNBUSDT', label: 'BNB/USDT' },
-      { sym: 'XRPUSDT', label: 'XRP/USDT' },
-      { sym: 'AVAXUSDT', label: 'AVAX/USDT' },
-      { sym: 'PAXGUSDT', label: 'XAU/USD' },
-      { sym: 'DOGEUSDT', label: 'DOGE/USDT' }
-    ];
+    let items = [];
 
     try {
-      const resp = await fetch('https://data-api.binance.vision/api/v3/ticker/24hr');
-      if (!resp.ok) return;
-      const list = await resp.json();
-      const map = {};
-      if (Array.isArray(list)) {
-        list.forEach(item => { map[item.symbol] = item; });
+      const baseUrl = window.NEURAL_CONFIG?.API_BASE_URL || '';
+      if (baseUrl) {
+        const resp = await fetch(`${baseUrl}/api/market/live-ticker`);
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.ok && Array.isArray(data.ticker) && data.ticker.length > 0) {
+            items = data.ticker;
+          }
+        }
       }
-
-      const chips = pairs.map(p => {
-        const d = map[p.sym];
-        const price = d ? window.formatPrice(parseFloat(d.lastPrice)) : '--';
-        const chg = d ? parseFloat(d.priceChangePercent) : 0;
-        const color = chg >= 0 ? '#34d399' : '#fb7185';
-        const sign = chg >= 0 ? '+' : '';
-        return `<span style="display:inline-flex;align-items:center;gap:6px;padding:0 18px;font-family:'JetBrains Mono',monospace;font-size:11px;white-space:nowrap;">
-          <strong style="color:#f8fafc;">${p.label}</strong>
-          <span style="color:#cbd5e1;">${price}</span>
-          <span style="color:${color};font-weight:800;">${sign}${chg.toFixed(2)}%</span>
-        </span>`;
-      }).join('');
-
-      track.innerHTML = chips + chips;
     } catch (_) {}
+
+    if (!items.length) {
+      try {
+        const [binResp, fxResp] = await Promise.all([
+          fetch('https://data-api.binance.vision/api/v3/ticker/24hr'),
+          fetch('https://open.er-api.com/v6/latest/USD')
+        ]);
+        const binMap = {};
+        if (binResp.ok) {
+          const list = await binResp.json();
+          if (Array.isArray(list)) list.forEach(t => { binMap[t.symbol] = t; });
+        }
+        const fx = fxResp.ok ? (await fxResp.json())?.rates || {} : {};
+
+        items = [
+          { label: 'BTC/USDT', tvSymbol: 'BINANCE:BTCUSDT', price: parseFloat(binMap.BTCUSDT?.lastPrice || 0), change: parseFloat(binMap.BTCUSDT?.priceChangePercent || 0), category: 'CRYPTO' },
+          { label: 'ETH/USDT', tvSymbol: 'BINANCE:ETHUSDT', price: parseFloat(binMap.ETHUSDT?.lastPrice || 0), change: parseFloat(binMap.ETHUSDT?.priceChangePercent || 0), category: 'CRYPTO' },
+          { label: 'SOL/USDT', tvSymbol: 'BINANCE:SOLUSDT', price: parseFloat(binMap.SOLUSDT?.lastPrice || 0), change: parseFloat(binMap.SOLUSDT?.priceChangePercent || 0), category: 'CRYPTO' },
+          { label: 'XAU/USD',  tvSymbol: 'OANDA:XAUUSD',    price: parseFloat(binMap.PAXGUSDT?.lastPrice || 0), change: parseFloat(binMap.PAXGUSDT?.priceChangePercent || 0), category: 'GOLD' },
+          { label: 'EUR/USD',  tvSymbol: 'FX:EURUSD',       price: parseFloat(binMap.EURUSDT?.lastPrice || 0) || (fx.EUR ? 1 / fx.EUR : 0), change: binMap.EURUSDT ? parseFloat(binMap.EURUSDT.priceChangePercent) : null, category: 'FOREX' },
+          { label: 'GBP/USD',  tvSymbol: 'FX:GBPUSD',       price: fx.GBP ? 1 / fx.GBP : 0, change: null, category: 'FOREX' },
+          { label: 'USD/JPY',  tvSymbol: 'FX:USDJPY',       price: fx.JPY || 0,             change: null, category: 'FOREX' },
+          { label: 'AUD/USD',  tvSymbol: 'FX:AUDUSD',       price: fx.AUD ? 1 / fx.AUD : 0, change: null, category: 'FOREX' }
+        ].filter(x => x.price > 0);
+      } catch (_) {}
+    }
+
+    if (!items.length) return;
+
+    const chips = items.map(item => {
+      const formatted = formatMarketRate(item.price, item.category, item.label);
+      const hasChg = item.change !== null && item.change !== undefined && !Number.isNaN(Number(item.change));
+      const chgNum = Number(item.change || 0);
+      const chgHtml = hasChg
+        ? `<span style="color:${chgNum >= 0 ? '#34d399' : '#fb7185'};font-weight:800;">${chgNum >= 0 ? '+' : ''}${chgNum.toFixed(2)}%</span>`
+        : `<span style="color:#38bdf8;font-weight:700;font-size:9px;">FX LIVE</span>`;
+
+      return `<button type="button" data-tv-pick="${item.tvSymbol}" class="login-ticker-chip"
+        style="display:inline-flex;align-items:center;gap:6px;padding:0 16px;background:none;border:none;cursor:pointer;font-family:'JetBrains Mono',monospace;font-size:11px;white-space:nowrap;">
+        <strong style="color:#f8fafc;">${item.label}</strong>
+        <span style="color:#e2e8f0;">${formatted}</span>
+        ${chgHtml}
+      </button>`;
+    }).join('');
+
+    track.innerHTML = chips + chips;
+    track.querySelectorAll('.login-ticker-chip').forEach(btn => {
+      btn.addEventListener('click', () => setLoginTradingViewSymbol(btn.dataset.tvPick));
+    });
   }
 
   function initTradingLoginScreen() {
     const overlay = document.getElementById('boot-intro-overlay');
-    if (!overlay || document.getElementById('login-trading-canvas')) return;
+    if (!overlay || document.getElementById('login-tv-bg-wrap')) return;
 
+    const oldCanvas = document.getElementById('login-trading-canvas');
+    if (oldCanvas) oldCanvas.remove();
+
+    overlay.style.background = '#0b0e14';
     overlay.style.overflowY = 'auto';
-    overlay.style.paddingTop = '48px';
+    overlay.style.paddingTop = '44px';
     overlay.style.paddingBottom = '56px';
 
-    // Ticker keyframe animation CSS
     if (!document.getElementById('login-trading-css')) {
       const st = document.createElement('style');
       st.id = 'login-trading-css';
@@ -245,146 +366,65 @@
         }
         #login-live-ticker-track {
           display: inline-flex;
-          animation: loginTickerScroll 28s linear infinite;
+          animation: loginTickerScroll 32s linear infinite;
         }
-        #login-live-ticker-track:hover {
-          animation-play-state: paused;
-        }
+        #login-live-ticker-track:hover { animation-play-state: paused; }
         .signup-extra-input {
           width: 100%;
           padding: 7px 10px;
           border-radius: 8px;
-          background: rgba(2, 6, 23, 0.88);
-          border: 1px solid rgba(56, 189, 248, 0.32);
+          background: rgba(2, 6, 23, 0.78);
+          backdrop-filter: blur(12px);
+          border: 1px solid rgba(56, 189, 248, 0.35);
           color: #f8fafc;
           font-size: 11px;
           outline: none;
           transition: border-color 0.15s ease;
         }
-        .signup-extra-input:focus {
-          border-color: #22d3ee;
-        }
+        .signup-extra-input:focus { border-color: #22d3ee; }
       `;
       document.head.appendChild(st);
     }
 
-    // 1. Animated Candlestick Background Canvas
-    const canvas = document.createElement('canvas');
-    canvas.id = 'login-trading-canvas';
-    canvas.style.cssText = 'position:fixed; inset:0; width:100vw; height:100vh; z-index:0; pointer-events:none;';
-    overlay.prepend(canvas);
-    const ctx = canvas.getContext('2d');
+    const tvWrap = document.createElement('div');
+    tvWrap.id = 'login-tv-bg-wrap';
+    tvWrap.style.cssText = 'position:fixed; top:34px; left:0; right:0; bottom:46px; z-index:0; background:#131722;';
+    tvWrap.innerHTML = `
+      <iframe id="login-live-tv-iframe"
+        src="${buildTradingViewEmbedUrl(activeLoginTvSymbol)}"
+        style="width:100%; height:100%; border:none;"
+        allowtransparency="true"
+        allowfullscreen>
+      </iframe>
+      <div id="login-tv-scrim" style="position:absolute; inset:0; background:rgba(4, 9, 18, 0.44); pointer-events:none; transition:opacity 0.25s ease;"></div>
+    `;
+    overlay.prepend(tvWrap);
 
-    const candleCount = 46;
-    const candles = [];
-    let base = 50;
-    for (let i = 0; i < candleCount; i++) {
-      const open = base;
-      const move = (Math.random() - 0.48) * 6.5;
-      const close = Math.max(18, Math.min(82, open + move));
-      const high = Math.max(open, close) + Math.random() * 4;
-      const low = Math.min(open, close) - Math.random() * 4;
-      candles.push({ open, close, high, low });
-      base = close;
+    const form = document.getElementById('user-auth-form');
+    const authCard = form ? (form.closest('[class*="rounded"]') || form.parentElement) : null;
+    if (authCard && authCard !== overlay) {
+      authCard.id = authCard.id || 'login-glass-auth-card';
+      authCard.style.position = 'relative';
+      authCard.style.zIndex = '10';
+      authCard.style.background = 'linear-gradient(145deg, rgba(8, 16, 32, 0.72), rgba(4, 9, 20, 0.80))';
+      authCard.style.backdropFilter = 'blur(26px) saturate(185%)';
+      authCard.style.webkitBackdropFilter = 'blur(26px) saturate(185%)';
+      authCard.style.border = '1px solid rgba(56, 189, 248, 0.45)';
+      authCard.style.boxShadow = '0 22px 54px rgba(0,0,0,0.72), inset 0 1px 0 rgba(255,255,255,0.22), 0 0 32px rgba(34,211,238,0.18)';
+      authCard.style.transition = 'opacity 0.25s ease, transform 0.25s ease';
     }
 
-    let tickCounter = 0;
-    const renderLoginBg = () => {
-      if (overlay.classList.contains('hidden')) {
-        loginRafId = requestAnimationFrame(renderLoginBg);
-        return;
-      }
-
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
-        canvas.width = Math.round(w * dpr);
-        canvas.height = Math.round(h * dpr);
-      }
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, w, h);
-
-      const t = LOGIN_THEMES[activeLoginTheme] || LOGIN_THEMES.candle_emerald;
-
-      // Subtle institutional chart grid
-      ctx.strokeStyle = t.grid;
-      ctx.lineWidth = 1;
-      for (let x = 0; x < w; x += 56) {
-        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
-      }
-      for (let y = 0; y < h; y += 56) {
-        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
-      }
-
-      // Live ticking last candle + periodic shift
-      tickCounter++;
-      const last = candles[candles.length - 1];
-      last.close = Math.max(18, Math.min(82, last.close + (Math.random() - 0.5) * 0.45));
-      last.high = Math.max(last.high, last.close);
-      last.low = Math.min(last.low, last.close);
-
-      if (tickCounter % 70 === 0) {
-        candles.shift();
-        const o = last.close;
-        const c = Math.max(20, Math.min(80, o + (Math.random() - 0.49) * 5));
-        candles.push({ open: o, close: c, high: Math.max(o, c) + Math.random() * 3, low: Math.min(o, c) - Math.random() * 3 });
-      }
-
-      const step = w / candleCount;
-      const bodyW = Math.max(4, step * 0.56);
-      const toY = (v) => h * 0.88 - (v / 100) * (h * 0.72);
-
-      // Draw Candlesticks
-      candles.forEach((c, idx) => {
-        const x = idx * step + step * 0.5;
-        const isUp = c.close >= c.open;
-        const col = isUp ? t.up : t.down;
-
-        ctx.strokeStyle = col;
-        ctx.lineWidth = 1.4;
-        ctx.beginPath();
-        ctx.moveTo(x, toY(c.high));
-        ctx.lineTo(x, toY(c.low));
-        ctx.stroke();
-
-        const topY = Math.min(toY(c.open), toY(c.close));
-        const bodyH = Math.max(2, Math.abs(toY(c.close) - toY(c.open)));
-        ctx.fillStyle = col;
-        ctx.fillRect(x - bodyW / 2, topY, bodyW, bodyH);
-      });
-
-      // Smooth EMA Curve
-      ctx.beginPath();
-      ctx.strokeStyle = t.ema;
-      ctx.lineWidth = 2;
-      let emaVal = candles[0].close;
-      candles.forEach((c, idx) => {
-        emaVal = emaVal * 0.82 + c.close * 0.18;
-        const x = idx * step + step * 0.5;
-        const y = toY(emaVal);
-        if (idx === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      });
-      ctx.stroke();
-
-      loginRafId = requestAnimationFrame(renderLoginBg);
-    };
-    if (loginRafId) cancelAnimationFrame(loginRafId);
-    loginRafId = requestAnimationFrame(renderLoginBg);
-
-    // 2. Top Live Scrolling Market Ticker Bar
     const tickerBar = document.createElement('div');
     tickerBar.id = 'login-live-ticker-bar';
     tickerBar.style.cssText = [
-      'position:fixed', 'top:0', 'left:0', 'right:0', 'z-index:20',
+      'position:fixed', 'top:0', 'left:0', 'right:0', 'z-index:25',
       'height:34px', 'display:flex', 'align-items:center', 'overflow:hidden',
-      'background:rgba(3, 8, 18, 0.90)', 'backdrop-filter:blur(10px)',
-      'border-bottom:1px solid rgba(56, 189, 248, 0.25)'
+      'background:rgba(4, 9, 18, 0.82)', 'backdrop-filter:blur(18px) saturate(170%)',
+      'border-bottom:1px solid rgba(255, 255, 255, 0.14)'
     ].join(';');
     tickerBar.innerHTML = `
-      <div style="padding:0 12px; height:100%; display:flex; align-items:center; gap:6px; background:rgba(16,185,129,0.16); border-right:1px solid rgba(56,189,248,0.25); font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:800; color:#34d399; z-index:2; white-space:nowrap;">
-        <span>●</span><span>LIVE FEED</span>
+      <div style="padding:0 12px; height:100%; display:flex; align-items:center; gap:6px; background:rgba(16,185,129,0.18); border-right:1px solid rgba(56,189,248,0.28); font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:800; color:#34d399; z-index:2; white-space:nowrap;">
+        <span>●</span><span>BINANCE &amp; FX LIVE</span>
       </div>
       <div style="flex:1; overflow:hidden;">
         <div id="login-live-ticker-track"></div>
@@ -394,36 +434,54 @@
     updateLoginTickerTape();
     setInterval(() => {
       if (!overlay.classList.contains('hidden')) updateLoginTickerTape();
-    }, 15000);
+    }, 10000);
 
-    // 3. Bottom Login Screen Trading Theme Switcher Bar
-    const switcher = document.createElement('div');
-    switcher.id = 'login-theme-switcher-bar';
-    switcher.style.cssText = [
-      'position:fixed', 'bottom:14px', 'left:50%', 'transform:translateX(-50%)',
-      'z-index:20', 'display:flex', 'flex-wrap:wrap', 'justify-content:center', 'gap:6px',
-      'padding:5px 8px', 'border-radius:999px',
-      'background:rgba(3, 8, 18, 0.85)', 'backdrop-filter:blur(12px)',
-      'border:1px solid rgba(56, 189, 248, 0.28)'
+    const bar = document.createElement('div');
+    bar.id = 'login-tv-pair-bar';
+    bar.style.cssText = [
+      'position:fixed', 'bottom:0', 'left:0', 'right:0', 'z-index:25',
+      'min-height:46px', 'padding:6px 12px',
+      'display:flex', 'flex-wrap:wrap', 'align-items:center', 'justify-content:center', 'gap:6px',
+      'background:rgba(4, 9, 18, 0.82)', 'backdrop-filter:blur(18px) saturate(170%)',
+      'border-top:1px solid rgba(255, 255, 255, 0.14)'
     ].join(';');
 
-    switcher.innerHTML = Object.entries(LOGIN_THEMES).map(([k, cfg]) => `
-      <button type="button" class="login-theme-pill-btn" data-login-theme="${k}"
-        style="padding:4px 10px; border-radius:999px; border:1px solid rgba(148,163,184,0.28); background:rgba(6,12,24,0.72); color:#94a3b8; font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:800; cursor:pointer;">
-        ${cfg.name}
+    bar.innerHTML = `
+      <span style="font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:800; color:#38bdf8; margin-right:4px;">📈 LIVE CHART:</span>
+      ${LOGIN_TV_PAIRS.map(p => `
+        <button type="button" class="login-tv-pair-btn" data-tv-symbol="${p.tvSymbol}"
+          style="padding:4px 10px; border-radius:999px; border:1px solid rgba(148,163,184,0.28); background:rgba(6,12,24,0.78); color:#94a3b8; font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:800; cursor:pointer;">
+          ${p.label}
+        </button>
+      `).join('')}
+      <button type="button" id="login-toggle-card-btn"
+        style="margin-left:6px; padding:4px 11px; border-radius:999px; border:1px solid rgba(251,191,36,0.65); background:rgba(245,158,11,0.18); color:#fde68a; font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:800; cursor:pointer;">
+        👁️ FULL CHART
       </button>
-    `).join('');
-    overlay.appendChild(switcher);
+    `;
+    overlay.appendChild(bar);
 
-    switcher.querySelectorAll('.login-theme-pill-btn').forEach(btn => {
-      btn.addEventListener('click', () => applyLoginScreenTheme(btn.dataset.loginTheme));
+    bar.querySelectorAll('.login-tv-pair-btn').forEach(btn => {
+      btn.addEventListener('click', () => setLoginTradingViewSymbol(btn.dataset.tvSymbol));
     });
 
-    applyLoginScreenTheme(activeLoginTheme);
+    const toggleBtn = bar.querySelector('#login-toggle-card-btn');
+    toggleBtn.addEventListener('click', () => {
+      loginCardHiddenForChart = !loginCardHiddenForChart;
+      const scrim = document.getElementById('login-tv-scrim');
+      if (authCard && authCard !== overlay) {
+        authCard.style.opacity = loginCardHiddenForChart ? '0' : '1';
+        authCard.style.pointerEvents = loginCardHiddenForChart ? 'none' : 'auto';
+      }
+      if (scrim) scrim.style.opacity = loginCardHiddenForChart ? '0' : '1';
+      toggleBtn.textContent = loginCardHiddenForChart ? '🔐 SHOW LOGIN' : '👁️ FULL CHART';
+    });
+
+    setLoginTradingViewSymbol(activeLoginTvSymbol);
   }
 
   // =========================================================================
-  // EXPANDED SIGN UP FORM DETAILS (INJECTED INSIDE #user-auth-form)
+  // EXPANDED SIGN UP FORM DETAILS
   // =========================================================================
   function injectExtraSignupFields() {
     const form = document.getElementById('user-auth-form');
@@ -450,7 +508,7 @@
           <label style="display:block; font-size:9px; font-weight:700; color:#7dd3fc; margin-bottom:3px;">PRIMARY MARKET</label>
           <select id="user-market-input" class="signup-extra-input">
             <option value="Crypto Futures">Crypto Futures</option>
-            <option value="Forex & Gold (XAU/USD)">Forex & Gold (XAU/USD)</option>
+            <option value="Forex & Gold (XAU/USD)">Forex &amp; Gold (XAU/USD)</option>
             <option value="Indices (NAS100 / US30)">Indices (NAS100 / US30)</option>
             <option value="Multi-Market (All)">Multi-Market (All)</option>
           </select>
@@ -490,7 +548,7 @@
   }
 
   // =========================================================================
-  // 10 PRO FULL-TRANSFORM DASHBOARD THEMES + CRYPTO BUBBLES ENGINE
+  // 10 PRO FULL-TRANSFORM THEMES + ENHANCED LIQUID GLASSMORPHISM + BUBBLES
   // =========================================================================
   let activeTheme = localStorage.getItem(THEME_STORAGE_KEY) || 'neural_default';
   let bubbleCanvas = null;
@@ -499,11 +557,33 @@
   let bubbles = [];
   let hoveredBubbleIdx = -1;
 
+  const BASE_LIQUID_GLASS_CSS = `
+    #protected-website-ui [id$="-widget"],
+    #protected-website-ui #asset-terminal-card,
+    #protected-website-ui #hud-wrapper-tab,
+    #admin-panel,
+    #coin-chart-modal > div,
+    #rr-calculator-modal > div {
+      background: linear-gradient(
+        145deg,
+        rgba(12, 22, 42, var(--neural-glass-alpha, 0.72)) 0%,
+        rgba(5, 11, 24, calc(var(--neural-glass-alpha, 0.72) + 0.08)) 100%
+      ) !important;
+      backdrop-filter: blur(24px) saturate(185%) !important;
+      -webkit-backdrop-filter: blur(24px) saturate(185%) !important;
+      border: 1px solid rgba(125, 211, 252, 0.30) !important;
+      box-shadow:
+        0 14px 38px rgba(0, 0, 0, 0.52),
+        inset 0 1px 0 rgba(255, 255, 255, 0.24),
+        inset 0 0 20px rgba(56, 189, 248, 0.09) !important;
+    }
+  `;
+
   const THEMES = [
     {
       id: 'neural_default',
       name: '🧠 Neural Cortex',
-      desc: 'Default Cyan Glass',
+      desc: 'Liquid Cyan Glass',
       badge: '#22d3ee',
       isBubbles: false,
       css: `body[data-neural-theme="neural_default"] #neural-canvas { filter: none !important; }`
@@ -519,7 +599,7 @@
     {
       id: 'bloomberg_pro',
       name: '🟧 Bloomberg Pro',
-      desc: 'Amber Desk Terminal',
+      desc: 'Amber Desk Glass',
       badge: '#ff8c00',
       isBubbles: false,
       css: `
@@ -538,10 +618,9 @@
         body[data-neural-theme="bloomberg_pro"] #protected-website-ui #hud-wrapper-tab,
         body[data-neural-theme="bloomberg_pro"] #coin-chart-modal > div,
         body[data-neural-theme="bloomberg_pro"] #rr-calculator-modal > div {
-          background: rgba(10, 10, 10, var(--neural-glass-alpha, 0.94)) !important;
-          border: 1px solid rgba(255, 140, 0, 0.65) !important;
-          border-radius: 6px !important;
-          box-shadow: 0 0 24px rgba(255, 140, 0, 0.16) !important;
+          background: linear-gradient(145deg, rgba(24, 14, 4, var(--neural-glass-alpha, 0.72)), rgba(10, 8, 5, calc(var(--neural-glass-alpha, 0.72) + 0.08))) !important;
+          border: 1px solid rgba(255, 140, 0, 0.58) !important;
+          box-shadow: 0 14px 36px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,200,120,0.28), 0 0 24px rgba(255, 140, 0, 0.18) !important;
         }
         body[data-neural-theme="bloomberg_pro"] #protected-website-ui [class*="text-cyan"] { color: #ffb347 !important; }
         body[data-neural-theme="bloomberg_pro"] #protected-website-ui [class*="border-cyan"] { border-color: rgba(255, 140, 0, 0.45) !important; }
@@ -556,7 +635,7 @@
     {
       id: 'tradingview_dark',
       name: '📊 TradingView Dark',
-      desc: 'Authentic TV Slate',
+      desc: 'Frosted TV Slate',
       badge: '#2962ff',
       isBubbles: false,
       css: `
@@ -567,9 +646,9 @@
         body[data-neural-theme="tradingview_dark"] #protected-website-ui #hud-wrapper-tab,
         body[data-neural-theme="tradingview_dark"] #coin-chart-modal > div,
         body[data-neural-theme="tradingview_dark"] #rr-calculator-modal > div {
-          background: rgba(30, 34, 45, var(--neural-glass-alpha, 0.94)) !important;
-          border: 1px solid #2a2e39 !important;
-          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55) !important;
+          background: linear-gradient(145deg, rgba(30, 36, 52, var(--neural-glass-alpha, 0.72)), rgba(19, 23, 34, calc(var(--neural-glass-alpha, 0.72) + 0.08))) !important;
+          border: 1px solid rgba(91, 156, 246, 0.35) !important;
+          box-shadow: 0 14px 36px rgba(0, 0, 0, 0.58), inset 0 1px 0 rgba(255, 255, 255, 0.20) !important;
         }
         body[data-neural-theme="tradingview_dark"] #protected-website-ui [class*="text-cyan"] { color: #5b9cf6 !important; }
         body[data-neural-theme="tradingview_dark"] #quick-fire-signal-btn,
@@ -583,12 +662,12 @@
     {
       id: 'apple_frost_light',
       name: '☀️ VisionOS Light',
-      desc: 'Clean Bright Glass',
+      desc: 'Frosted Bright Glass',
       badge: '#38bdf8',
       isBubbles: false,
       css: `
         body[data-neural-theme="apple_frost_light"] {
-          background: linear-gradient(135deg, #e2ecf7 0%, #f4f7fb 50%, #dce8f5 100%) !important;
+          background: linear-gradient(135deg, #d8e7f7 0%, #f2f6fc 50%, #d4e3f5 100%) !important;
           color: #0f172a !important;
         }
         body[data-neural-theme="apple_frost_light"] #neural-canvas {
@@ -597,10 +676,11 @@
         body[data-neural-theme="apple_frost_light"] #protected-website-ui [id$="-widget"],
         body[data-neural-theme="apple_frost_light"] #protected-website-ui #asset-terminal-card,
         body[data-neural-theme="apple_frost_light"] #protected-website-ui #hud-wrapper-tab {
-          background: rgba(255, 255, 255, 0.80) !important;
-          backdrop-filter: blur(20px) saturate(180%) !important;
-          border: 1px solid rgba(15, 23, 42, 0.14) !important;
-          box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12) !important;
+          background: linear-gradient(145deg, rgba(255, 255, 255, 0.72), rgba(241, 247, 255, 0.62)) !important;
+          backdrop-filter: blur(26px) saturate(200%) !important;
+          -webkit-backdrop-filter: blur(26px) saturate(200%) !important;
+          border: 1px solid rgba(255, 255, 255, 0.85) !important;
+          box-shadow: 0 14px 36px rgba(15, 23, 42, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.95) !important;
           color: #0f172a !important;
         }
         body[data-neural-theme="apple_frost_light"] #protected-website-ui [id$="-widget"] *,
@@ -608,9 +688,12 @@
         body[data-neural-theme="apple_frost_light"] #protected-website-ui #hud-wrapper-tab * {
           color: #0f172a !important;
         }
+        body[data-neural-theme="apple_frost_light"] #sig-direction-badge {
+          color: #ffffff !important;
+        }
         body[data-neural-theme="apple_frost_light"] #protected-website-ui [class*="bg-slate-950"],
         body[data-neural-theme="apple_frost_light"] #protected-website-ui [class*="bg-slate-900"] {
-          background: rgba(241, 245, 249, 0.92) !important;
+          background: rgba(241, 245, 249, 0.82) !important;
           border-color: rgba(15, 23, 42, 0.12) !important;
         }
         body[data-neural-theme="apple_frost_light"] #protected-website-ui [class*="text-emerald"] { color: #059669 !important; }
@@ -620,7 +703,7 @@
     {
       id: 'phantom_oled',
       name: '🖤 Phantom OLED',
-      desc: 'Pure Black & Silver',
+      desc: 'Smoked Glass & Silver',
       badge: '#e2e8f0',
       isBubbles: false,
       css: `
@@ -631,9 +714,9 @@
         body[data-neural-theme="phantom_oled"] #protected-website-ui #hud-wrapper-tab,
         body[data-neural-theme="phantom_oled"] #coin-chart-modal > div,
         body[data-neural-theme="phantom_oled"] #rr-calculator-modal > div {
-          background: rgba(8, 8, 10, var(--neural-glass-alpha, 0.94)) !important;
+          background: linear-gradient(145deg, rgba(18, 18, 22, var(--neural-glass-alpha, 0.72)), rgba(6, 6, 8, calc(var(--neural-glass-alpha, 0.72) + 0.08))) !important;
           border: 1px solid rgba(255, 255, 255, 0.24) !important;
-          box-shadow: 0 0 24px rgba(255, 255, 255, 0.06) !important;
+          box-shadow: 0 14px 36px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.24) !important;
         }
         body[data-neural-theme="phantom_oled"] #protected-website-ui [class*="text-cyan"] { color: #e2e8f0 !important; }
         body[data-neural-theme="phantom_oled"] #protected-website-ui [class*="border-cyan"] { border-color: rgba(255, 255, 255, 0.22) !important; }
@@ -642,7 +725,7 @@
     {
       id: 'wallst_quant',
       name: '🏛️ Wall St. Quant',
-      desc: 'Obsidian & Emerald',
+      desc: 'Emerald Glass Desk',
       badge: '#10b981',
       isBubbles: false,
       css: `
@@ -659,9 +742,9 @@
         body[data-neural-theme="wallst_quant"] #protected-website-ui #asset-terminal-card,
         body[data-neural-theme="wallst_quant"] #protected-website-ui #hud-wrapper-tab,
         body[data-neural-theme="wallst_quant"] #coin-chart-modal > div {
-          background: rgba(3, 20, 13, var(--neural-glass-alpha, 0.9)) !important;
-          border: 1px solid rgba(16, 185, 129, 0.6) !important;
-          box-shadow: 0 0 26px rgba(16, 185, 129, 0.20) !important;
+          background: linear-gradient(145deg, rgba(4, 28, 18, var(--neural-glass-alpha, 0.72)), rgba(2, 14, 9, calc(var(--neural-glass-alpha, 0.72) + 0.08))) !important;
+          border: 1px solid rgba(16, 185, 129, 0.55) !important;
+          box-shadow: 0 14px 36px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(167, 243, 208, 0.26), 0 0 26px rgba(16, 185, 129, 0.20) !important;
         }
         body[data-neural-theme="wallst_quant"] #protected-website-ui [class*="text-cyan"] { color: #6ee7b7 !important; }
       `
@@ -669,7 +752,7 @@
     {
       id: 'tokyo_drift',
       name: '⛩️ Tokyo Drift',
-      desc: 'Cyber Pink & Indigo',
+      desc: 'Cyber Neon Glass',
       badge: '#f43f5e',
       isBubbles: false,
       css: `
@@ -687,9 +770,9 @@
         body[data-neural-theme="tokyo_drift"] #protected-website-ui #asset-terminal-card,
         body[data-neural-theme="tokyo_drift"] #protected-website-ui #hud-wrapper-tab,
         body[data-neural-theme="tokyo_drift"] #coin-chart-modal > div {
-          background: rgba(18, 6, 34, var(--neural-glass-alpha, 0.88)) !important;
-          border: 1px solid rgba(236, 72, 153, 0.72) !important;
-          box-shadow: 0 0 28px rgba(236, 72, 153, 0.26), inset 0 0 14px rgba(34, 211, 238, 0.14) !important;
+          background: linear-gradient(145deg, rgba(28, 10, 48, var(--neural-glass-alpha, 0.72)), rgba(14, 5, 28, calc(var(--neural-glass-alpha, 0.72) + 0.08))) !important;
+          border: 1px solid rgba(236, 72, 153, 0.65) !important;
+          box-shadow: 0 14px 36px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(249, 168, 212, 0.28), 0 0 28px rgba(236, 72, 153, 0.26) !important;
         }
         body[data-neural-theme="tokyo_drift"] #protected-website-ui [class*="text-cyan"] { color: #f9a8d4 !important; }
       `
@@ -697,7 +780,7 @@
     {
       id: 'dubai_gold',
       name: '👑 Dubai Gold',
-      desc: 'Luxury Black & Gold',
+      desc: 'Luxury Gold Glass',
       badge: '#fbbf24',
       isBubbles: false,
       css: `
@@ -707,9 +790,9 @@
         body[data-neural-theme="dubai_gold"] #protected-website-ui #asset-terminal-card,
         body[data-neural-theme="dubai_gold"] #protected-website-ui #hud-wrapper-tab,
         body[data-neural-theme="dubai_gold"] #coin-chart-modal > div {
-          background: rgba(20, 15, 5, var(--neural-glass-alpha, 0.90)) !important;
-          border: 1px solid rgba(251, 191, 36, 0.68) !important;
-          box-shadow: 0 0 28px rgba(245, 158, 11, 0.24), inset 0 0 12px rgba(253, 224, 71, 0.10) !important;
+          background: linear-gradient(145deg, rgba(28, 20, 6, var(--neural-glass-alpha, 0.72)), rgba(14, 10, 3, calc(var(--neural-glass-alpha, 0.72) + 0.08))) !important;
+          border: 1px solid rgba(251, 191, 36, 0.62) !important;
+          box-shadow: 0 14px 36px rgba(0, 0, 0, 0.62), inset 0 1px 0 rgba(254, 240, 138, 0.28), 0 0 28px rgba(245, 158, 11, 0.22) !important;
         }
         body[data-neural-theme="dubai_gold"] #protected-website-ui [class*="text-cyan"] { color: #fde68a !important; }
         body[data-neural-theme="dubai_gold"] #protected-website-ui [class*="border-cyan"] { border-color: rgba(251, 191, 36, 0.45) !important; }
@@ -718,7 +801,7 @@
     {
       id: 'eclipse_crimson',
       name: '🌋 Eclipse Crimson',
-      desc: 'Volcanic Dark Red',
+      desc: 'Volcanic Glass Red',
       badge: '#ef4444',
       isBubbles: false,
       css: `
@@ -728,9 +811,9 @@
         body[data-neural-theme="eclipse_crimson"] #protected-website-ui #asset-terminal-card,
         body[data-neural-theme="eclipse_crimson"] #protected-website-ui #hud-wrapper-tab,
         body[data-neural-theme="eclipse_crimson"] #coin-chart-modal > div {
-          background: rgba(26, 5, 9, var(--neural-glass-alpha, 0.90)) !important;
-          border: 1px solid rgba(239, 68, 68, 0.72) !important;
-          box-shadow: 0 0 28px rgba(239, 68, 68, 0.28), inset 0 0 12px rgba(251, 146, 60, 0.12) !important;
+          background: linear-gradient(145deg, rgba(36, 7, 13, var(--neural-glass-alpha, 0.72)), rgba(18, 3, 6, calc(var(--neural-glass-alpha, 0.72) + 0.08))) !important;
+          border: 1px solid rgba(239, 68, 68, 0.65) !important;
+          box-shadow: 0 14px 36px rgba(0, 0, 0, 0.62), inset 0 1px 0 rgba(252, 165, 165, 0.26), 0 0 28px rgba(239, 68, 68, 0.25) !important;
         }
         body[data-neural-theme="eclipse_crimson"] #protected-website-ui [class*="text-cyan"] { color: #fca5a5 !important; }
         body[data-neural-theme="eclipse_crimson"] #protected-website-ui [class*="border-cyan"] { border-color: rgba(239, 68, 68, 0.45) !important; }
@@ -745,7 +828,7 @@
       style.id = 'neural-builtin-themes-css';
       document.head.appendChild(style);
     }
-    style.textContent = THEMES.map(t => t.css).join('\n');
+    style.textContent = BASE_LIQUID_GLASS_CSS + '\n' + THEMES.map(t => t.css).join('\n');
   }
 
   function startCryptoBubbles() {
@@ -906,12 +989,13 @@
     document.querySelectorAll('.neural-theme-choice-btn').forEach(btn => {
       const isAct = btn.dataset.themeId === activeTheme;
       btn.style.borderColor = isAct ? found.badge : 'rgba(148,163,184,0.28)';
-      btn.style.background = isAct ? 'rgba(30,41,59,0.98)' : 'rgba(15,23,42,0.82)';
+      btn.style.background = isAct ? 'rgba(30,41,59,0.92)' : 'rgba(15,23,42,0.68)';
       btn.style.boxShadow = isAct ? `0 0 12px ${found.badge}55` : 'none';
     });
 
-    const lbl = document.getElementById('admin-hub-active-theme');
-    if (lbl) lbl.textContent = found.name;
+    document.querySelectorAll('.neural-active-theme-label').forEach(lbl => {
+      lbl.textContent = found.name;
+    });
 
     if (!silent) window.showToast(`Theme Applied: ${found.name}`, '🎨');
   }
@@ -919,7 +1003,95 @@
   window.NeuralThemeManager = { applyTheme, getActiveTheme: () => activeTheme };
 
   // =========================================================================
-  // BROADCAST BANNER & VISUAL ADMIN SETTINGS
+  // USER-ACCESSIBLE FLOATING THEMES PANEL (THEMES ONLY — NO ADMIN OPTIONS)
+  // =========================================================================
+  function mountUserThemesPanel() {
+    if (document.getElementById('user-quick-theme-pill')) return;
+
+    const glassOp = getActiveGlassOpacity();
+
+    const pill = document.createElement('button');
+    pill.id = 'user-quick-theme-pill';
+    pill.type = 'button';
+    pill.innerHTML = '<span>🎨</span><span>THEMES</span>';
+    pill.style.cssText = [
+      'position:fixed', 'bottom:18px', 'right:18px', 'z-index:9990',
+      'display:none', 'align-items:center', 'gap:6px',
+      'padding:9px 15px', 'border-radius:999px',
+      'background:linear-gradient(145deg, rgba(10,22,42,0.78), rgba(5,12,26,0.86))',
+      'backdrop-filter:blur(22px) saturate(185%)',
+      '-webkit-backdrop-filter:blur(22px) saturate(185%)',
+      'border:1px solid rgba(56,189,248,0.65)', 'color:#67e8f9',
+      'font-family:"JetBrains Mono",monospace', 'font-size:11px', 'font-weight:800',
+      'box-shadow:0 8px 26px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.25), 0 0 20px rgba(34,211,238,0.28)',
+      'cursor:pointer'
+    ].join(';');
+    document.body.appendChild(pill);
+
+    const modal = document.createElement('div');
+    modal.id = 'user-themes-studio-modal';
+    modal.style.cssText = [
+      'position:fixed', 'bottom:64px', 'right:18px', 'z-index:9992',
+      'width:324px', 'max-height:76vh', 'overflow-y:auto',
+      'display:none', 'padding:14px', 'border-radius:16px',
+      'background:linear-gradient(145deg, rgba(10,20,38,0.76), rgba(4,10,22,0.86))',
+      'backdrop-filter:blur(26px) saturate(190%)',
+      '-webkit-backdrop-filter:blur(26px) saturate(190%)',
+      'border:1px solid rgba(125,211,252,0.42)',
+      'box-shadow:0 18px 46px rgba(0,0,0,0.75), inset 0 1px 0 rgba(255,255,255,0.26)',
+      'font-family:"JetBrains Mono",monospace'
+    ].join(';');
+
+    modal.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+        <div>
+          <div style="font-size:11px; font-weight:800; color:#67e8f9; letter-spacing:0.05em;">🎨 THEMES PANEL</div>
+          <div style="font-size:9px; color:#94a3b8;">Active: <span class="neural-active-theme-label" style="color:#34d399; font-weight:800;">-</span></div>
+        </div>
+        <button type="button" id="close-user-themes-btn"
+          style="padding:2px 8px; border-radius:7px; background:rgba(244,63,94,0.18); border:1px solid rgba(244,63,94,0.5); color:#fda4af; font-size:12px; font-weight:800; cursor:pointer;">✕</button>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-bottom:10px;">
+        ${THEMES.map(t => `
+          <button type="button" class="neural-theme-choice-btn" data-theme-id="${t.id}"
+            style="text-align:left; padding:7px 8px; border-radius:9px; border:1px solid rgba(148,163,184,0.28); background:rgba(15,23,42,0.68); cursor:pointer; transition:all 0.15s ease;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:3px;">
+              <span style="font-size:9.5px; font-weight:800; color:#ffffff;">${t.name}</span>
+              <span style="width:7px; height:7px; border-radius:999px; background:${t.badge}; flex-shrink:0;"></span>
+            </div>
+            <div style="font-size:8px; color:#94a3b8; margin-top:2px;">${t.desc}</div>
+          </button>
+        `).join('')}
+      </div>
+
+      <div style="padding-top:8px; border-top:1px solid rgba(125,211,252,0.2); display:flex; flex-direction:column; gap:5px;">
+        <div style="display:flex; justify-content:space-between; font-size:9px; color:#cbd5e1;">
+          <span>🪟 Liquid Glass Opacity</span>
+          <span class="neural-glass-opacity-val" style="color:#38bdf8; font-weight:800;">${glassOp}%</span>
+        </div>
+        <input class="neural-glass-opacity-slider" type="range" min="40" max="96" value="${glassOp}" style="width:100%; accent-color:#22d3ee; cursor:pointer;" />
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    pill.addEventListener('click', () => {
+      modal.style.display = modal.style.display === 'none' ? 'block' : 'none';
+      applyTheme(activeTheme, true);
+    });
+    modal.querySelector('#close-user-themes-btn').addEventListener('click', () => {
+      modal.style.display = 'none';
+    });
+    modal.querySelectorAll('.neural-theme-choice-btn').forEach(btn => {
+      btn.addEventListener('click', () => applyTheme(btn.dataset.themeId));
+    });
+    modal.querySelector('.neural-glass-opacity-slider').addEventListener('input', (e) => {
+      setGlassOpacity(e.target.value);
+    });
+  }
+
+  // =========================================================================
+  // BROADCAST BANNER & VISUAL SETTINGS
   // =========================================================================
   function renderBroadcastBanner(message, type = 'gold') {
     let banner = document.getElementById('neural-admin-broadcast-banner');
@@ -930,10 +1102,10 @@
     }
 
     const styles = {
-      gold:  { border: 'rgba(251,191,36,0.75)', color: '#fef08a', bg: 'linear-gradient(90deg, rgba(24,18,5,0.96), rgba(40,26,6,0.96))', icon: '📢' },
-      red:   { border: 'rgba(244,63,94,0.85)',  color: '#fecdd3', bg: 'linear-gradient(90deg, rgba(40,6,14,0.96), rgba(60,8,20,0.96))', icon: '🚨' },
-      green: { border: 'rgba(16,185,129,0.8)',  color: '#a7f3d0', bg: 'linear-gradient(90deg, rgba(4,30,18,0.96), rgba(6,45,28,0.96))', icon: '🟢' },
-      cyan:  { border: 'rgba(34,211,238,0.8)',  color: '#cffafe', bg: 'linear-gradient(90deg, rgba(6,24,38,0.96), rgba(8,36,52,0.96))', icon: '⚡' }
+      gold:  { border: 'rgba(251,191,36,0.75)', color: '#fef08a', bg: 'linear-gradient(90deg, rgba(24,18,5,0.86), rgba(40,26,6,0.88))', icon: '📢' },
+      red:   { border: 'rgba(244,63,94,0.85)',  color: '#fecdd3', bg: 'linear-gradient(90deg, rgba(40,6,14,0.86), rgba(60,8,20,0.88))', icon: '🚨' },
+      green: { border: 'rgba(16,185,129,0.8)',  color: '#a7f3d0', bg: 'linear-gradient(90deg, rgba(4,30,18,0.86), rgba(6,45,28,0.88))', icon: '🟢' },
+      cyan:  { border: 'rgba(34,211,238,0.8)',  color: '#cffafe', bg: 'linear-gradient(90deg, rgba(6,24,38,0.86), rgba(8,36,52,0.88))', icon: '⚡' }
     };
     const st = styles[type] || styles.gold;
 
@@ -947,20 +1119,23 @@
       'z-index:9980', 'max-width:90vw', 'padding:7px 16px', 'border-radius:999px',
       `background:${st.bg}`, `border:1px solid ${st.border}`, `color:${st.color}`,
       'font-family:"JetBrains Mono",monospace', 'font-size:11px', 'font-weight:800',
-      'box-shadow:0 6px 24px rgba(0,0,0,0.65)', 'backdrop-filter:blur(10px)',
+      'box-shadow:0 8px 26px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.2)',
+      'backdrop-filter:blur(18px) saturate(180%)',
       'display:flex', 'align-items:center', 'gap:8px'
     ].join(';');
     banner.innerHTML = `<span>${st.icon}</span><span>${clean.replace(/</g, '&lt;')}</span>`;
   }
 
   function applyAdminVisualSettings(s) {
-    document.documentElement.style.setProperty('--neural-glass-alpha', ((Number(s.glassOpacity) || 88) / 100).toFixed(2));
+    setGlassOpacity(getActiveGlassOpacity());
     renderBroadcastBanner(s.announcement, s.announcementType);
     const levEl = document.getElementById('rr-leverage');
     if (levEl && s.defaultLeverage) levEl.value = s.defaultLeverage;
-    const floatBtn = document.getElementById('admin-quick-theme-pill');
-    if (floatBtn) {
-      floatBtn.style.display = (isAdmin && s.showFloatingThemeBtn) ? 'flex' : 'none';
+
+    // Show floating 🎨 THEMES button to ALL logged-in users (opens ONLY Themes panel)
+    const userPill = document.getElementById('user-quick-theme-pill');
+    if (userPill) {
+      userPill.style.display = (currentUser && s.showFloatingThemeBtn !== false) ? 'flex' : 'none';
     }
   }
 
@@ -977,7 +1152,7 @@
   }
 
   // =========================================================================
-  // UNIFIED ADMIN COMMAND CENTER (INJECTED DIRECTLY INSIDE #admin-panel)
+  // UNIFIED ADMIN COMMAND CENTER (STRICTLY INSIDE #admin-panel FOR ADMIN ONLY)
   // =========================================================================
   function mountAdminCommandCenter() {
     const adminPanel = document.getElementById('admin-panel');
@@ -992,14 +1167,16 @@
     if (document.getElementById('admin-pro-hub')) return;
 
     const s = loadAdminSettings();
+    const glassOp = getActiveGlassOpacity();
     const hub = document.createElement('div');
     hub.id = 'admin-pro-hub';
     hub.style.cssText = [
       'flex-shrink:0', 'width:100%', 'display:block', 'margin:8px 0 12px 0',
       'padding:10px', 'border-radius:12px',
-      'background:rgba(2, 6, 23, 0.96)',
-      'border:1px solid rgba(34, 211, 238, 0.5)',
-      'box-shadow:0 0 18px rgba(34, 211, 238, 0.14)',
+      'background:rgba(4, 10, 24, 0.72)',
+      'backdrop-filter:blur(18px)',
+      'border:1px solid rgba(56, 189, 248, 0.42)',
+      'box-shadow:inset 0 1px 0 rgba(255,255,255,0.18)',
       'font-family:"JetBrains Mono", monospace'
     ].join(';');
 
@@ -1018,15 +1195,14 @@
           style="padding:6px 4px; border-radius:7px; font-size:9px; font-weight:800; cursor:pointer; border:1px solid rgba(148,163,184,0.25); background:rgba(15,23,42,0.85); color:#94a3b8;">📢 SYSTEM</button>
       </div>
 
-      <!-- TAB 1: PRO THEMES (10) -->
       <div id="admin-hub-pane-themes" style="display:block;">
         <div style="font-size:9px; color:#94a3b8; margin-bottom:6px;">
-          Active Theme: <span id="admin-hub-active-theme" style="color:#34d399; font-weight:800;">-</span>
+          Active Theme: <span class="neural-active-theme-label" style="color:#34d399; font-weight:800;">-</span>
         </div>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:10px;">
           ${THEMES.map(t => `
             <button type="button" class="neural-theme-choice-btn" data-theme-id="${t.id}"
-              style="text-align:left; padding:7px; border-radius:8px; border:1px solid rgba(148,163,184,0.28); background:rgba(15,23,42,0.82); cursor:pointer;">
+              style="text-align:left; padding:7px; border-radius:8px; border:1px solid rgba(148,163,184,0.28); background:rgba(15,23,42,0.68); cursor:pointer;">
               <div style="display:flex; justify-content:space-between; align-items:center; gap:3px;">
                 <span style="font-size:9.5px; font-weight:800; color:#ffffff;">${t.name}</span>
                 <span style="width:7px; height:7px; border-radius:999px; background:${t.badge}; flex-shrink:0;"></span>
@@ -1038,19 +1214,18 @@
 
         <div style="padding-top:8px; border-top:1px solid rgba(56,189,248,0.18); display:flex; flex-direction:column; gap:6px;">
           <div style="display:flex; justify-content:space-between; font-size:9px; color:#cbd5e1;">
-            <span>🪟 Panel Opacity</span>
-            <span id="admin-glass-opacity-val" style="color:#38bdf8; font-weight:800;">${s.glassOpacity}%</span>
+            <span>🪟 Liquid Glass Opacity</span>
+            <span class="neural-glass-opacity-val" style="color:#38bdf8; font-weight:800;">${glassOp}%</span>
           </div>
-          <input id="admin-glass-opacity-slider" type="range" min="45" max="98" value="${s.glassOpacity}" style="width:100%; accent-color:#22d3ee;" />
+          <input class="neural-glass-opacity-slider" type="range" min="40" max="96" value="${glassOp}" style="width:100%; accent-color:#22d3ee;" />
 
           <label style="display:flex; align-items:center; justify-content:space-between; font-size:9px; color:#cbd5e1; cursor:pointer;">
-            <span>Show Floating 🎨 Button</span>
+            <span>Enable User 🎨 Themes Button</span>
             <input id="admin-float-btn-toggle" type="checkbox" ${s.showFloatingThemeBtn ? 'checked' : ''} style="accent-color:#22d3ee;" />
           </label>
         </div>
       </div>
 
-      <!-- TAB 2: SIGNALS ENGINE -->
       <div id="admin-hub-pane-signals" style="display:none; flex-direction:column; gap:8px;">
         <button id="admin-sig-pause-btn" type="button"
           style="width:100%; padding:7px; border-radius:8px; font-size:9.5px; font-weight:800; cursor:pointer; border:1px solid ${s.signalsPaused ? 'rgba(244,63,94,0.7)' : 'rgba(16,185,129,0.65)'}; background:${s.signalsPaused ? 'rgba(244,63,94,0.2)' : 'rgba(16,185,129,0.2)'}; color:${s.signalsPaused ? '#fda4af' : '#6ee7b7'};">
@@ -1109,7 +1284,6 @@
         </button>
       </div>
 
-      <!-- TAB 3: SYSTEM & BROADCAST -->
       <div id="admin-hub-pane-system" style="display:none; flex-direction:column; gap:8px;">
         <div style="display:flex; flex-direction:column; gap:5px;">
           <span style="font-size:9px; color:#94a3b8; font-weight:700;">📢 GLOBAL ANNOUNCEMENT BANNER</span>
@@ -1129,7 +1303,7 @@
         </div>
 
         <div style="padding:7px; border-radius:8px; background:rgba(15,23,42,0.85); border:1px solid rgba(56,189,248,0.22); font-size:9px; color:#cbd5e1; display:flex; flex-direction:column; gap:3px;">
-          <div style="display:flex; justify-content:space-between;"><span>Live Feed:</span><span id="admin-sys-feed-stat" style="color:#34d399; font-weight:800;">BINANCE VISION</span></div>
+          <div style="display:flex; justify-content:space-between;"><span>Live Feed:</span><span id="admin-sys-feed-stat" style="color:#34d399; font-weight:800;">BINANCE + FX</span></div>
           <div style="display:flex; justify-content:space-between;"><span>Tracked Assets:</span><span id="admin-sys-coin-count" style="color:#38bdf8; font-weight:800;">-</span></div>
         </div>
 
@@ -1137,7 +1311,7 @@
           <button id="admin-sys-sync-btn" type="button" style="padding:7px; border-radius:8px; background:rgba(16,185,129,0.2); border:1px solid rgba(16,185,129,0.55); color:#6ee7b7; font-size:9px; font-weight:800; cursor:pointer;">🔄 FORCE SYNC</button>
           <button id="admin-sys-reset-tabs-btn" type="button" style="padding:7px; border-radius:8px; background:rgba(56,189,248,0.18); border:1px solid rgba(56,189,248,0.5); color:#7dd3fc; font-size:9px; font-weight:800; cursor:pointer;">📐 RESET TABS</button>
           <button id="admin-sys-export-btn" type="button" style="padding:7px; border-radius:8px; background:rgba(168,85,247,0.2); border:1px solid rgba(168,85,247,0.55); color:#d8b4fe; font-size:9px; font-weight:800; cursor:pointer;">💾 EXPORT JSON</button>
-          <button id="admin-sys-clear-pnl-btn" type="button" style="padding:7px; border-radius:8px; background:rgba(244,63,94,0.2); border:1px solid rgba(244,63,94,0.55); color:#fda4af; font-size:9px; font-weight:800; cursor:pointer;">🗑️ RESET P&L</button>
+          <button id="admin-sys-clear-pnl-btn" type="button" style="padding:7px; border-radius:8px; background:rgba(244,63,94,0.2); border:1px solid rgba(244,63,94,0.55); color:#fda4af; font-size:9px; font-weight:800; cursor:pointer;">🗑️ RESET P&amp;L</button>
         </div>
       </div>
     `;
@@ -1173,11 +1347,9 @@
       btn.addEventListener('click', () => applyTheme(btn.dataset.themeId));
     });
 
-    const glassSlider = hub.querySelector('#admin-glass-opacity-slider');
-    const glassVal = hub.querySelector('#admin-glass-opacity-val');
-    glassSlider.addEventListener('input', () => {
-      glassVal.textContent = `${glassSlider.value}%`;
-      saveAdminSettings({ glassOpacity: Number(glassSlider.value) });
+    hub.querySelector('.neural-glass-opacity-slider').addEventListener('input', (e) => {
+      setGlassOpacity(e.target.value);
+      saveAdminSettings({ glassOpacity: Number(e.target.value) });
     });
 
     hub.querySelector('#admin-float-btn-toggle').addEventListener('change', (e) => {
@@ -1274,29 +1446,6 @@
       window.showToast('Trade Logs & P&L Reset!', '🗑️');
     });
 
-    if (!document.getElementById('admin-quick-theme-pill')) {
-      const pill = document.createElement('button');
-      pill.id = 'admin-quick-theme-pill';
-      pill.type = 'button';
-      pill.textContent = '🎨 THEMES';
-      pill.style.cssText = [
-        'position:fixed', 'bottom:18px', 'right:18px', 'z-index:9990',
-        'display:none', 'align-items:center', 'gap:6px',
-        'padding:9px 14px', 'border-radius:999px',
-        'background:rgba(6,16,30,0.94)', 'backdrop-filter:blur(12px)',
-        'border:1px solid rgba(34,211,238,0.75)', 'color:#67e8f9',
-        'font-family:"JetBrains Mono",monospace', 'font-size:11px', 'font-weight:800',
-        'box-shadow:0 0 22px rgba(34,211,238,0.35)', 'cursor:pointer'
-      ].join(';');
-      pill.addEventListener('click', () => {
-        adminPanel.classList.remove('hidden', 'translate-x-full');
-        adminPanel.classList.add('flex');
-        const themeTabBtn = hub.querySelector('.admin-hub-tab-btn[data-tab="themes"]');
-        if (themeTabBtn) themeTabBtn.click();
-      });
-      document.body.appendChild(pill);
-    }
-
     applyTheme(activeTheme, true);
     applyAdminVisualSettings(s);
   }
@@ -1305,23 +1454,6 @@
   async function syncLivePrices() {
     const priceMap = {};
     const fundingMap = {};
-
-    try {
-      const resp = await fetch('https://data-api.binance.vision/api/v3/ticker/24hr');
-      if (resp.ok) {
-        const list = await resp.json();
-        if (Array.isArray(list)) {
-          list.forEach(t => {
-            if (t.symbol && t.symbol.endsWith('USDT')) {
-              priceMap[t.symbol] = {
-                price: parseFloat(t.lastPrice) || 0,
-                change: parseFloat(t.priceChangePercent) || 0
-              };
-            }
-          });
-        }
-      }
-    } catch (_) {}
 
     try {
       const baseUrl = window.NEURAL_CONFIG?.API_BASE_URL || '';
@@ -1333,7 +1465,7 @@
         if (data.ok && Array.isArray(data.pairs)) {
           data.pairs.forEach(p => {
             if (p.fundingRate !== undefined) fundingMap[p.binanceSymbol] = p.fundingRate;
-            if (!priceMap[p.binanceSymbol] && p.price > 0) {
+            if (p.price > 0) {
               priceMap[p.binanceSymbol] = { price: p.price, change: p.change };
             }
           });
@@ -1345,6 +1477,25 @@
     } catch (_) {
       const badge = document.getElementById('admin-hub-api-status');
       if (badge) { badge.textContent = '● DIRECT MODE'; badge.style.color = '#fbbf24'; }
+    }
+
+    if (Object.keys(priceMap).length === 0) {
+      try {
+        const resp = await fetch('https://data-api.binance.vision/api/v3/ticker/24hr');
+        if (resp.ok) {
+          const list = await resp.json();
+          if (Array.isArray(list)) {
+            list.forEach(t => {
+              if (t.symbol && t.symbol.endsWith('USDT')) {
+                priceMap[t.symbol] = {
+                  price: parseFloat(t.lastPrice) || 0,
+                  change: parseFloat(t.priceChangePercent) || 0
+                };
+              }
+            });
+          }
+        }
+      } catch (_) {}
     }
 
     const nodes = window.NeuralCanvasEngine ? window.NeuralCanvasEngine.getNodes() : [];
@@ -1384,21 +1535,26 @@
       const nearHtml = nearCoins.map(n => {
         const prox = window.NeuralPnlManager.getNodeProximity(n);
         const spec = getStealthSpec(n.asset.fundingRate);
+        const mType = detectSignalMarketType(n.asset.symbol, n.asset.assetClass);
         const cls = spec.isLong
-          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40'
-          : 'bg-rose-500/20 text-rose-300 border border-rose-400/40';
+          ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-400/50'
+          : 'bg-rose-500/25 text-rose-300 border border-rose-400/50';
         return `
-          <div onclick="window.__openChartModal(${n.index})" class="cursor-pointer p-2 rounded-lg bg-slate-950/90 border border-emerald-500/35 hover:border-cyan-400 flex items-center justify-between">
-            <div><span class="font-bold text-white">${n.asset.symbol}</span> <span class="text-[9px] text-cyan-300">@ ${window.formatPrice(n.asset.price)}</span></div>
+          <div onclick="window.__openChartModal(${n.index})" class="cursor-pointer p-2 rounded-lg bg-slate-950/75 border border-emerald-500/35 hover:border-cyan-400 flex items-center justify-between">
+            <div>
+              <span class="text-[8px] px-1 py-0.5 rounded bg-slate-800 text-amber-300 font-bold mr-1">${mType}</span>
+              <span class="font-bold text-white">${n.asset.symbol}</span>
+              <span class="text-[9px] text-cyan-300">@ ${window.formatPrice(n.asset.price)}</span>
+            </div>
             <div class="flex items-center gap-1">
               <span class="text-[8px] px-1 rounded bg-cyan-500/20 text-cyan-200 font-bold">Δ ${prox.distPct.toFixed(2)}%</span>
-              <span class="text-[8px] px-1.5 py-0.5 rounded font-bold ${cls}">🎯 NEAR ${spec.shortLabel}</span>
+              <span class="text-[8px] px-1.5 py-0.5 rounded font-bold ${cls}">${spec.isLong ? '▲ BUY' : '▼ SELL'}</span>
             </div>
           </div>`;
       }).join('');
 
       const newsHtml = (data.news || []).slice(0, 6).map(item => `
-        <div class="p-2 rounded-lg bg-slate-950/80 border border-cyan-500/20 space-y-0.5">
+        <div class="p-2 rounded-lg bg-slate-950/70 border border-cyan-500/20 space-y-0.5">
           <div class="flex justify-between text-[8px]">
             <span class="text-cyan-300/80 font-bold">${item.source}</span>
             <span class="${item.sentiment === 'BULLISH' ? 'text-emerald-300' : item.sentiment === 'BEARISH' ? 'text-rose-300' : 'text-amber-300'} font-bold">${item.sentiment}</span>
@@ -1519,9 +1675,11 @@
 
     const distFromEq = Math.abs(livePrice - midRange) / (swingHigh - swingLow || 1);
     const confidence = Math.max(Number(settings.minConfidence) || 75, Math.min(96, Math.round(78 + distFromEq * 30)));
+    const assetClass = detectSignalMarketType(chosen.asset.symbol, chosen.asset.assetClass);
 
     const sig = {
       symbol: chosen.asset.symbol,
+      assetClass,
       isLong,
       direction: spec.side,
       confidence,
@@ -1541,16 +1699,16 @@
     window.NeuralCanvasEngine.triggerBurst(chosen.x, chosen.y);
 
     const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-    setText('sig-direction-badge', `${sig.direction} • ${sig.confidence}% LIVE`);
+    renderSignalHeaderBar(sig);
     setText('sig-entry', window.formatPrice(sig.entryPrice));
     setText('sig-tp1', window.formatPrice(sig.tp1Price));
     setText('sig-tp2', window.formatPrice(sig.tp2Price));
     setText('sig-sl', window.formatPrice(sig.slPrice));
-    setText('sig-reasoning', `Real-Time 15m ${isLong ? 'Discount' : 'Premium'} Signal (${settings.rrMode.toUpperCase()}) on ${sig.symbol} @ ${window.formatPrice(entryPrice)}.`);
+    setText('sig-reasoning', `[${assetClass}] Real-Time 15m ${isLong ? 'Discount' : 'Premium'} Signal (${settings.rrMode.toUpperCase()}) on ${sig.symbol} @ ${window.formatPrice(entryPrice)}.`);
 
     updateTerminalCard();
     window.NeuralPnlManager?.logTrade({ ...sig, source: 'REALTIME_15M', entryDistancePct: 0 });
-    window.showToast(`${isLong ? '🟢 BUY' : '🔴 SELL'} Live Signal: ${sig.symbol} @ ${window.formatPrice(entryPrice)}`, isLong ? '🚀' : '🔻');
+    window.showToast(`[${assetClass}] ${isLong ? '🟢 BUY / LONG' : '🔴 SELL / SHORT'}: ${sig.symbol}`, isLong ? '🚀' : '🔻');
   }
 
   // ---------------- LIVE TRADINGVIEW CHART MODAL ----------------
@@ -1633,7 +1791,7 @@
       const lbl = document.getElementById('rr-pair-label');
       const ent = document.getElementById('rr-entry-price');
       const slEl = document.getElementById('rr-sl-price');
-      if (lbl) lbl.textContent = `${sig.pair || sig.symbol} (${sig.assetClass || 'MARKET'})`;
+      if (lbl) lbl.textContent = `${sig.pair || sig.symbol} (${detectSignalMarketType(sig.pair || sig.symbol, sig.assetClass)})`;
       if (ent) ent.value = sig.entryPrice;
       if (slEl) slEl.value = sig.slPrice;
     }
@@ -1732,8 +1890,10 @@
       document.getElementById('protected-website-ui')?.classList.add('hidden');
       document.getElementById('boot-intro-overlay')?.classList.remove('hidden', 'opacity-0', 'pointer-events-none');
       document.getElementById('admin-panel')?.classList.add('hidden', 'translate-x-full');
-      const pill = document.getElementById('admin-quick-theme-pill');
-      if (pill) pill.style.display = 'none';
+      const userPill = document.getElementById('user-quick-theme-pill');
+      const userModal = document.getElementById('user-themes-studio-modal');
+      if (userPill) userPill.style.display = 'none';
+      if (userModal) userModal.style.display = 'none';
     });
   }
 
@@ -1754,6 +1914,7 @@
       setTimeout(() => gate.classList.add('hidden'), 400);
     }
 
+    mountUserThemesPanel();
     if (adminFlag) {
       mountAdminCommandCenter();
       loadAdminUsers();
@@ -1772,7 +1933,7 @@
       const list = document.getElementById('admin-users-list');
       if (!list) return;
       list.innerHTML = data.users.map((u, idx) => `
-        <div class="p-2.5 rounded-xl bg-slate-950/90 border border-cyan-500/25 space-y-1 text-[10px]">
+        <div class="p-2.5 rounded-xl bg-slate-950/75 border border-cyan-500/25 space-y-1 text-[10px]">
           <div class="flex justify-between items-center">
             <span class="font-bold text-white">${u.name || u.email}</span>
             <span class="${u.status === 'approved' ? 'text-emerald-300' : 'text-amber-300'} font-bold">${(u.status || 'pending').toUpperCase()}</span>
@@ -1812,6 +1973,7 @@
     injectThemeCss();
     initTradingLoginScreen();
     initAuth();
+    mountUserThemesPanel();
 
     try { window.NeuralCanvasEngine?.init((idx) => window.__openChartModal(idx)); } catch (_) {}
     try { window.NeuralChartVision?.init(); } catch (_) {}
@@ -1855,7 +2017,7 @@
 
     const adminPanel = document.getElementById('admin-panel');
     on('admin-access-btn', 'click', () => {
-      if (!adminPanel) return;
+      if (!adminPanel || !isAdmin) return;
       mountAdminCommandCenter();
       adminPanel.classList.remove('hidden');
       adminPanel.classList.add('flex');
