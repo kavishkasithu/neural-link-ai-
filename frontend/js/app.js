@@ -1,22 +1,23 @@
 /**
  * MAIN FRONTEND APPLICATION CONTROLLER
- * Includes: Live TradingView Login Chart (BTC + Main Forex Pairs),
- * Backend Binance-API-Key Live Ticker, Expanded Trader Sign Up Form,
- * User-Accessible Themes Panel (Themes Only), Market Type Badge + Green BUY / Red SELL Signal Bars,
- * Enhanced Liquid Glassmorphism UI, Real-Time 15m Structure Signals, and Admin Command Center.
+ * Includes: Pair-Locked AI Signal Lifecycle (1 Active Signal per Pair until TP/SL Hit),
+ * Real-Time Auto TP/SL Hit Monitor & Auto Summary Panel,
+ * Live TradingView Login Chart (BTC + Main Forex Pairs), Binance-API-Key Live Ticker,
+ * Expanded Trader Sign Up Form, User Themes Panel, Market Type Badge + Green BUY / Red SELL Bars,
+ * Enhanced Liquid Glassmorphism UI, and Pro Admin Command Center.
  */
 (function () {
   let currentUser = null;
   let isAdmin = false;
   let isSignUpMode = false;
   let hasActiveSignal = false;
-  let recentSymbols = [];
   let autoSignalTimer = null;
 
   const THEME_STORAGE_KEY = 'neural_ai_active_theme';
   const GLASS_STORAGE_KEY = 'neural_ai_user_glass_opacity';
   const LOGIN_PAIR_KEY = 'neural_ai_login_tv_symbol';
   const SETTINGS_STORAGE_KEY = 'neural_admin_global_settings';
+  const SIGNAL_LIFECYCLE_KEY = 'neural_ai_signal_lifecycle_v1';
 
   const DEFAULT_ADMIN_SETTINGS = {
     announcement: '',
@@ -103,7 +104,7 @@
     window.__toastTimer = setTimeout(() => {
       toast.classList.add('opacity-0', 'translate-y-2');
       toast.classList.remove('opacity-100', 'translate-y-0');
-    }, 3400);
+    }, 3600);
   };
 
   window.copyCoinSymbolToClipboard = function (sym) {
@@ -127,10 +128,312 @@
 
   function normalizeSymbolKey(asset) {
     if (!asset) return '';
+    if (typeof asset === 'string') {
+      const clean = asset.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      return clean.endsWith('USDT') ? clean : `${clean.replace(/USD$/, '')}USDT`;
+    }
     if (asset.binanceSymbol) return String(asset.binanceSymbol).toUpperCase().replace(/[^A-Z0-9]/g, '');
     const clean = String(asset.symbol || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
     return clean.endsWith('USDT') ? clean : `${clean.replace(/USD$/, '')}USDT`;
   }
+
+  // =========================================================================
+  // AI SIGNAL LIFECYCLE MANAGER (PAIR LOCK + AUTO TP/SL HIT + AUTO SUMMARY)
+  // =========================================================================
+  function loadLifecycleState() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(SIGNAL_LIFECYCLE_KEY) || '{}');
+      return {
+        activeByKey: raw.activeByKey && typeof raw.activeByKey === 'object' ? raw.activeByKey : {},
+        history: Array.isArray(raw.history) ? raw.history : []
+      };
+    } catch (_) {
+      return { activeByKey: {}, history: [] };
+    }
+  }
+
+  let lifecycleState = loadLifecycleState();
+
+  function saveLifecycleState() {
+    localStorage.setItem(SIGNAL_LIFECYCLE_KEY, JSON.stringify(lifecycleState));
+  }
+
+  function isPairLocked(symbolOrAsset) {
+    const key = normalizeSymbolKey(symbolOrAsset);
+    return Boolean(key && lifecycleState.activeByKey[key]);
+  }
+
+  function getActiveSignalForPair(symbolOrAsset) {
+    const key = normalizeSymbolKey(symbolOrAsset);
+    return key ? (lifecycleState.activeByKey[key] || null) : null;
+  }
+
+  function registerActiveSignal(sig) {
+    const key = normalizeSymbolKey(sig.binanceSymbol || sig.symbol || sig.pair);
+    if (!key) return { ok: false, reason: 'INVALID_SYMBOL' };
+
+    // Strict Rule: Block duplicate signal if this pair already has an active OPEN trade
+    if (lifecycleState.activeByKey[key]) {
+      return { ok: false, reason: 'PAIR_LOCKED', existing: lifecycleState.activeByKey[key] };
+    }
+
+    const entry = Number(sig.entryPrice);
+    const tp1 = Number(sig.tp1Price || sig.tpPrice);
+    const tp2 = Number(sig.tp2Price || tp1);
+    const sl = Number(sig.slPrice);
+    if (!entry || !tp1 || !sl) return { ok: false, reason: 'INVALID_PRICES' };
+
+    const isLong = sig.isLong !== undefined
+      ? Boolean(sig.isLong)
+      : (tp1 > entry);
+
+    const record = {
+      id: `${key}_${Date.now()}`,
+      key,
+      symbol: sig.symbol || sig.pair || key,
+      assetClass: detectSignalMarketType(sig.symbol || sig.pair, sig.assetClass),
+      isLong,
+      direction: isLong ? 'BUY / LONG' : 'SELL / SHORT',
+      confidence: Number(sig.confidence) || 85,
+      entryPrice: entry,
+      tp1Price: tp1,
+      tp2Price: tp2,
+      slPrice: sl,
+      livePrice: entry,
+      status: 'OPEN',
+      openedAt: Date.now(),
+      source: sig.source || 'REALTIME_AI'
+    };
+
+    lifecycleState.activeByKey[key] = record;
+    saveLifecycleState();
+    renderAutoTpSlSummary();
+    return { ok: true, record };
+  }
+
+  function closeActiveSignal(key, outcome, exitPrice) {
+    const trade = lifecycleState.activeByKey[key];
+    if (!trade) return;
+
+    const pnlPct = trade.isLong
+      ? ((exitPrice - trade.entryPrice) / trade.entryPrice) * 100
+      : ((trade.entryPrice - exitPrice) / trade.entryPrice) * 100;
+
+    const closed = {
+      ...trade,
+      status: outcome, // 'TP HIT' | 'SL HIT' | 'CLOSED'
+      exitPrice,
+      pnlPct: Number(pnlPct.toFixed(2)),
+      closedAt: Date.now()
+    };
+
+    delete lifecycleState.activeByKey[key];
+    lifecycleState.history.unshift(closed);
+    if (lifecycleState.history.length > 40) {
+      lifecycleState.history = lifecycleState.history.slice(0, 40);
+    }
+    saveLifecycleState();
+
+    // Unlock node visual reference
+    const nodes = window.NeuralCanvasEngine ? window.NeuralCanvasEngine.getNodes() : [];
+    const node = nodes.find(n => n.asset && normalizeSymbolKey(n.asset) === key);
+    if (node) {
+      node.lastSignal = null;
+    }
+
+    // Update top alert & toast notification
+    const isWin = outcome === 'TP HIT';
+    if (outcome === 'TP HIT' || outcome === 'SL HIT') {
+      window.showToast(
+        `${isWin ? '✅ TP HIT' : '❌ SL HIT'}: ${trade.symbol} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%) — Pair Unlocked!`,
+        isWin ? '🏆' : '🛑'
+      );
+
+      const alertBanner = document.getElementById('signal-alert-banner');
+      if (alertBanner) {
+        alertBanner.classList.remove('hidden');
+        alertBanner.innerHTML = `
+          <div style="display:flex; flex-direction:column; gap:4px; min-width:260px; padding:8px 14px; border-radius:12px; backdrop-filter:blur(22px) saturate(185%); background:${isWin ? 'rgba(4,42,26,0.88)' : 'rgba(48,6,14,0.88)'}; border:1px solid ${isWin ? 'rgba(52,211,153,0.9)' : 'rgba(251,113,133,0.9)'}; box-shadow:0 10px 30px rgba(0,0,0,0.65); font-family:'JetBrains Mono',monospace;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+              <span style="font-size:10px; font-weight:900; color:${isWin ? '#6ee7b7' : '#fda4af'};">${isWin ? '✅ TARGET REACHED (TP HIT)' : '❌ STOP LOSS HIT (SL HIT)'}</span>
+              <span style="font-size:9px; color:#cbd5e1;">${trade.assetClass}</span>
+            </div>
+            <div style="font-size:11px; font-weight:800; color:#ffffff;">
+              ${trade.symbol} • ${trade.direction} • <span style="color:${isWin ? '#34d399' : '#fb7185'};">${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%</span>
+            </div>
+            <div style="font-size:9px; color:#94a3b8;">Entry ${window.formatPrice(trade.entryPrice)} → Exit ${window.formatPrice(exitPrice)} (Pair Unlocked)</div>
+          </div>
+        `;
+      }
+    }
+
+    renderAutoTpSlSummary();
+    updateTerminalCard();
+  }
+
+  function monitorActiveSignalsForTpSl() {
+    const activeKeys = Object.keys(lifecycleState.activeByKey);
+    if (!activeKeys.length) return;
+
+    const nodes = window.NeuralCanvasEngine ? window.NeuralCanvasEngine.getNodes() : [];
+    const priceByKey = {};
+    nodes.forEach(n => {
+      if (n.asset && Number(n.asset.price) > 0) {
+        priceByKey[normalizeSymbolKey(n.asset)] = Number(n.asset.price);
+      }
+    });
+
+    let changed = false;
+    activeKeys.forEach(key => {
+      const trade = lifecycleState.activeByKey[key];
+      if (!trade) return;
+
+      const liveP = priceByKey[key];
+      if (!liveP || Number.isNaN(liveP) || liveP <= 0) return;
+
+      // Ignore obviously corrupted/mismatched ticks (>50% instant deviation)
+      if (Math.abs(liveP - trade.entryPrice) / trade.entryPrice > 0.5) return;
+
+      trade.livePrice = liveP;
+      changed = true;
+
+      if (trade.isLong) {
+        if (liveP <= trade.slPrice) {
+          closeActiveSignal(key, 'SL HIT', liveP);
+          return;
+        }
+        if (liveP >= trade.tp1Price) {
+          closeActiveSignal(key, 'TP HIT', liveP);
+          return;
+        }
+      } else {
+        if (liveP >= trade.slPrice) {
+          closeActiveSignal(key, 'SL HIT', liveP);
+          return;
+        }
+        if (liveP <= trade.tp1Price) {
+          closeActiveSignal(key, 'TP HIT', liveP);
+          return;
+        }
+      }
+    });
+
+    if (changed) {
+      saveLifecycleState();
+      renderAutoTpSlSummary();
+    }
+  }
+
+  function renderAutoTpSlSummary() {
+    const host = document.getElementById('daily-summary-body') || document.getElementById('daily-trading-summary-widget');
+    if (!host) return;
+
+    let box = document.getElementById('auto-tpsl-summary-panel');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'auto-tpsl-summary-panel';
+      box.style.cssText = [
+        'margin-top:8px', 'padding:9px', 'border-radius:10px',
+        'background:rgba(4, 10, 22, 0.72)',
+        'border:1px solid rgba(56, 189, 248, 0.32)',
+        'font-family:"JetBrains Mono", monospace'
+      ].join(';');
+      host.prepend(box);
+    }
+
+    const activeList = Object.values(lifecycleState.activeByKey);
+    const history = lifecycleState.history;
+    const tpCount = history.filter(h => h.status === 'TP HIT').length;
+    const slCount = history.filter(h => h.status === 'SL HIT').length;
+    const decided = tpCount + slCount;
+    const winRate = decided > 0 ? Math.round((tpCount / decided) * 100) : 0;
+
+    const activeHtml = activeList.length
+      ? activeList.map(t => {
+          const lp = Number(t.livePrice || t.entryPrice);
+          const floatPct = t.isLong
+            ? ((lp - t.entryPrice) / t.entryPrice) * 100
+            : ((t.entryPrice - lp) / t.entryPrice) * 100;
+          const pctColor = floatPct >= 0 ? '#34d399' : '#fb7185';
+          return `
+            <div style="padding:6px 7px; border-radius:8px; background:rgba(15,23,42,0.78); border:1px solid ${t.isLong ? 'rgba(16,185,129,0.45)' : 'rgba(244,63,94,0.45)'}; margin-top:5px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; gap:4px;">
+                <span style="font-size:9.5px; font-weight:800; color:#ffffff;">🔒 ${t.symbol}</span>
+                <span style="font-size:8.5px; padding:1px 6px; border-radius:4px; font-weight:800; color:#fff; background:${t.isLong ? '#059669' : '#e11d48'};">${t.isLong ? '▲ BUY' : '▼ SELL'}</span>
+              </div>
+              <div style="display:flex; justify-content:space-between; font-size:8.5px; color:#cbd5e1; margin-top:3px;">
+                <span>Now: <strong>${window.formatPrice(lp)}</strong></span>
+                <span style="color:${pctColor}; font-weight:800;">${floatPct >= 0 ? '+' : ''}${floatPct.toFixed(2)}%</span>
+              </div>
+              <div style="display:flex; justify-content:space-between; font-size:8px; color:#94a3b8; margin-top:2px;">
+                <span style="color:#34d399;">TP: ${window.formatPrice(t.tp1Price)}</span>
+                <span style="color:#fb7185;">SL: ${window.formatPrice(t.slPrice)}</span>
+              </div>
+            </div>`;
+        }).join('')
+      : `<div style="font-size:9px; color:#64748b; text-align:center; padding:6px 0;">No locked pairs — Ready for new signals</div>`;
+
+    const historyHtml = history.slice(0, 8).map(h => {
+      const isTp = h.status === 'TP HIT';
+      const timeStr = h.closedAt ? new Date(h.closedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+      return `
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:6px; padding:5px 7px; border-radius:7px; background:${isTp ? 'rgba(6,44,28,0.65)' : 'rgba(48,8,16,0.65)'}; border:1px solid ${isTp ? 'rgba(16,185,129,0.45)' : 'rgba(244,63,94,0.45)'}; margin-top:4px;">
+          <div>
+            <div style="font-size:9.5px; font-weight:800; color:#ffffff;">${h.symbol} <span style="font-size:8px; color:#94a3b8;">${timeStr}</span></div>
+            <div style="font-size:8px; color:#cbd5e1;">${h.direction} • ${window.formatPrice(h.entryPrice)} → ${window.formatPrice(h.exitPrice)}</div>
+          </div>
+          <div style="text-align:right;">
+            <span style="display:inline-block; padding:2px 6px; border-radius:5px; font-size:8.5px; font-weight:900; background:${isTp ? '#10b981' : '#f43f5e'}; color:#ffffff;">
+              ${isTp ? '✅ TP HIT' : '❌ SL HIT'}
+            </span>
+            <div style="font-size:8.5px; font-weight:800; color:${isTp ? '#6ee7b7' : '#fda4af'}; margin-top:1px;">
+              ${h.pnlPct >= 0 ? '+' : ''}${Number(h.pnlPct || 0).toFixed(2)}%
+            </div>
+          </div>
+        </div>`;
+    }).join('');
+
+    box.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+        <span style="font-size:9.5px; font-weight:800; color:#67e8f9;">🤖 LIVE AI SIGNAL TRACKER</span>
+        <span style="font-size:8.5px; font-weight:800; color:#fbbf24;">WIN RATE: ${winRate}%</span>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:5px; text-align:center; margin-bottom:7px;">
+        <div style="padding:5px 4px; border-radius:7px; background:rgba(30,41,59,0.75); border:1px solid rgba(56,189,248,0.3);">
+          <div style="font-size:8px; color:#94a3b8;">LOCKED</div>
+          <div style="font-size:12px; font-weight:900; color:#38bdf8;">${activeList.length}</div>
+        </div>
+        <div style="padding:5px 4px; border-radius:7px; background:rgba(6,44,28,0.72); border:1px solid rgba(16,185,129,0.45);">
+          <div style="font-size:8px; color:#6ee7b7;">TP HIT</div>
+          <div style="font-size:12px; font-weight:900; color:#34d399;">${tpCount}</div>
+        </div>
+        <div style="padding:5px 4px; border-radius:7px; background:rgba(48,8,16,0.72); border:1px solid rgba(244,63,94,0.45);">
+          <div style="font-size:8px; color:#fda4af;">SL HIT</div>
+          <div style="font-size:12px; font-weight:900; color:#fb7185;">${slCount}</div>
+        </div>
+      </div>
+
+      <div style="font-size:8.5px; font-weight:800; color:#7dd3fc; margin-bottom:2px;">🔒 ACTIVE SIGNALS (WAITING TP/SL)</div>
+      <div style="max-height:140px; overflow-y:auto;">${activeHtml}</div>
+
+      ${history.length ? `
+        <div style="font-size:8.5px; font-weight:800; color:#94a3b8; margin-top:8px; padding-top:6px; border-top:1px solid rgba(56,189,248,0.18);">
+          🏁 AUTO TP / SL HIT RESULTS
+        </div>
+        <div style="max-height:160px; overflow-y:auto;">${historyHtml}</div>
+      ` : ''}
+    `;
+  }
+
+  window.NeuralSignalTracker = {
+    isPairLocked,
+    getActiveSignalForPair,
+    registerActiveSignal,
+    closeActiveSignal,
+    renderAutoTpSlSummary,
+    getState: () => lifecycleState
+  };
 
   // =========================================================================
   // SIGNAL MARKET TYPE DETECTOR + GREEN BUY / RED SELL BAR RENDERER
@@ -166,7 +469,6 @@
 
     const dirBadge = document.getElementById('sig-direction-badge');
     if (dirBadge) {
-      // Inject small market type pill directly ABOVE the Buy/Sell bar
       let typeRow = document.getElementById('sig-market-type-row');
       if (!typeRow) {
         typeRow = document.createElement('div');
@@ -175,16 +477,19 @@
         dirBadge.parentElement.insertBefore(typeRow, dirBadge);
       }
 
+      const lockedTag = isPairLocked(sig.symbol || sig.pair)
+        ? '<span style="color:#fbbf24; font-weight:800;">🔒 ACTIVE</span>'
+        : '';
+
       typeRow.innerHTML = `
         <span style="display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:999px; font-family:'JetBrains Mono',monospace; font-size:9px; font-weight:800; letter-spacing:0.08em; background:${tStyle.bg}; border:1px solid ${tStyle.border}; color:${tStyle.color};">
           <span>${tStyle.icon}</span><span>${tStyle.label}</span>
         </span>
         <span style="font-family:'JetBrains Mono',monospace; font-size:9px; font-weight:700; color:#94a3b8;">
-          ${sig.symbol || sig.pair || ''} • ${sig.confidence || 88}% LIVE
+          ${sig.symbol || sig.pair || ''} • ${sig.confidence || 88}% ${lockedTag}
         </span>
       `;
 
-      // Full-width Green BUY LONG bar OR Red SELL SHORT bar
       dirBadge.textContent = isLong ? '▲  BUY / LONG' : '▼  SELL / SHORT';
       dirBadge.style.cssText = isLong
         ? [
@@ -207,7 +512,6 @@
           ].join(';');
     }
 
-    // Also style top floating signal alert banner if present
     const alertBanner = document.getElementById('signal-alert-banner');
     if (alertBanner) {
       alertBanner.classList.remove('hidden');
@@ -688,9 +992,7 @@
         body[data-neural-theme="apple_frost_light"] #protected-website-ui #hud-wrapper-tab * {
           color: #0f172a !important;
         }
-        body[data-neural-theme="apple_frost_light"] #sig-direction-badge {
-          color: #ffffff !important;
-        }
+        body[data-neural-theme="apple_frost_light"] #sig-direction-badge { color: #ffffff !important; }
         body[data-neural-theme="apple_frost_light"] #protected-website-ui [class*="bg-slate-950"],
         body[data-neural-theme="apple_frost_light"] #protected-website-ui [class*="bg-slate-900"] {
           background: rgba(241, 245, 249, 0.82) !important;
@@ -1132,7 +1434,6 @@
     const levEl = document.getElementById('rr-leverage');
     if (levEl && s.defaultLeverage) levEl.value = s.defaultLeverage;
 
-    // Show floating 🎨 THEMES button to ALL logged-in users (opens ONLY Themes panel)
     const userPill = document.getElementById('user-quick-theme-pill');
     if (userPill) {
       userPill.style.display = (currentUser && s.showFloatingThemeBtn !== false) ? 'flex' : 'none';
@@ -1282,6 +1583,11 @@
           style="width:100%; padding:8px; border-radius:8px; background:rgba(34,211,238,0.22); border:1px solid rgba(34,211,238,0.7); color:#ecfeff; font-size:10px; font-weight:800; cursor:pointer;">
           ⚡ FIRE LIVE SIGNAL NOW
         </button>
+
+        <button id="admin-unlock-all-pairs-btn" type="button"
+          style="width:100%; padding:6px; border-radius:8px; background:rgba(245,158,11,0.18); border:1px solid rgba(251,191,36,0.55); color:#fde68a; font-size:9px; font-weight:800; cursor:pointer;">
+          🔓 FORCE UNLOCK ALL ACTIVE PAIRS
+        </button>
       </div>
 
       <div id="admin-hub-pane-system" style="display:none; flex-direction:column; gap:8px;">
@@ -1397,6 +1703,13 @@
 
     hub.querySelector('#admin-force-signal-btn').addEventListener('click', () => generateNearEntrySignal());
 
+    hub.querySelector('#admin-unlock-all-pairs-btn').addEventListener('click', () => {
+      lifecycleState.activeByKey = {};
+      saveLifecycleState();
+      renderAutoTpSlSummary();
+      window.showToast('All locked pairs cleared by Admin!', '🔓');
+    });
+
     const bcInput = hub.querySelector('#admin-bc-input');
     const bcType = hub.querySelector('#admin-bc-type');
     hub.querySelector('#admin-bc-set-btn').addEventListener('click', () => {
@@ -1440,10 +1753,12 @@
 
     hub.querySelector('#admin-sys-clear-pnl-btn').addEventListener('click', () => {
       Object.keys(localStorage).forEach(k => {
-        if (/pnl|trade/i.test(k)) localStorage.removeItem(k);
+        if (/pnl|trade|lifecycle/i.test(k)) localStorage.removeItem(k);
       });
+      lifecycleState = { activeByKey: {}, history: [] };
+      renderAutoTpSlSummary();
       if (window.NeuralPnlManager?.load) window.NeuralPnlManager.load();
-      window.showToast('Trade Logs & P&L Reset!', '🗑️');
+      window.showToast('Trade Logs, TP/SL History & P&L Reset!', '🗑️');
     });
 
     applyTheme(activeTheme, true);
@@ -1512,8 +1827,13 @@
       if (fundingMap[key] !== undefined) {
         n.asset.fundingRate = fundingMap[key];
       }
+      // Restore active signal reference onto node if locked
+      if (lifecycleState.activeByKey[key]) {
+        n.lastSignal = lifecycleState.activeByKey[key];
+      }
     });
 
+    monitorActiveSignalsForTpSl();
     updateTerminalCard();
     updateBtcSummary();
   }
@@ -1536,9 +1856,12 @@
         const prox = window.NeuralPnlManager.getNodeProximity(n);
         const spec = getStealthSpec(n.asset.fundingRate);
         const mType = detectSignalMarketType(n.asset.symbol, n.asset.assetClass);
-        const cls = spec.isLong
-          ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-400/50'
-          : 'bg-rose-500/25 text-rose-300 border border-rose-400/50';
+        const locked = isPairLocked(n.asset);
+        const cls = locked
+          ? 'bg-amber-500/25 text-amber-300 border border-amber-400/50'
+          : spec.isLong
+            ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-400/50'
+            : 'bg-rose-500/25 text-rose-300 border border-rose-400/50';
         return `
           <div onclick="window.__openChartModal(${n.index})" class="cursor-pointer p-2 rounded-lg bg-slate-950/75 border border-emerald-500/35 hover:border-cyan-400 flex items-center justify-between">
             <div>
@@ -1548,7 +1871,7 @@
             </div>
             <div class="flex items-center gap-1">
               <span class="text-[8px] px-1 rounded bg-cyan-500/20 text-cyan-200 font-bold">Δ ${prox.distPct.toFixed(2)}%</span>
-              <span class="text-[8px] px-1.5 py-0.5 rounded font-bold ${cls}">${spec.isLong ? '▲ BUY' : '▼ SELL'}</span>
+              <span class="text-[8px] px-1.5 py-0.5 rounded font-bold ${cls}">${locked ? '🔒 OPEN' : (spec.isLong ? '▲ BUY' : '▼ SELL')}</span>
             </div>
           </div>`;
       }).join('');
@@ -1594,12 +1917,24 @@
       chg.className = node.asset.change >= 0 ? 'text-[11px] text-emerald-400 font-semibold' : 'text-[11px] text-rose-400 font-semibold';
     }
 
+    // If this selected pair has a locked active signal, display it directly
+    const activeSig = getActiveSignalForPair(node.asset);
+    if (activeSig) {
+      hasActiveSignal = true;
+      renderSignalHeaderBar(activeSig);
+      const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+      setText('sig-entry', window.formatPrice(activeSig.entryPrice));
+      setText('sig-tp1', window.formatPrice(activeSig.tp1Price));
+      setText('sig-tp2', window.formatPrice(activeSig.tp2Price));
+      setText('sig-sl', window.formatPrice(activeSig.slPrice));
+    }
+
     document.getElementById('term-market-update-box')?.classList.toggle('hidden', hasActiveSignal);
     document.getElementById('term-signal-box')?.classList.toggle('hidden', !hasActiveSignal);
   }
 
-  // ---------------- REAL-TIME 15M MARKET STRUCTURE SIGNAL ENGINE ----------------
-  async function generateNearEntrySignal() {
+  // ---------------- REAL-TIME 15M MARKET STRUCTURE SIGNAL ENGINE (PAIR-LOCKED) ----------------
+  async function generateNearEntrySignal(preferSelectedNode = false) {
     const settings = loadAdminSettings();
     if (settings.signalsPaused) {
       window.showToast('Signals are Paused by Admin', '⏸️');
@@ -1609,9 +1944,34 @@
     const nodes = (window.NeuralCanvasEngine ? window.NeuralCanvasEngine.getNodes() : []).filter(n => n.asset);
     if (!nodes.length) return;
 
-    let pool = nodes.filter(n => !recentSymbols.includes(n.asset.symbol));
-    if (!pool.length) { recentSymbols = []; pool = nodes; }
-    const chosen = pool[0];
+    let chosen = null;
+
+    if (preferSelectedNode) {
+      const sel = nodes[window.NeuralCanvasEngine?.getSelectedIndex?.() || 0];
+      if (sel && sel.asset) {
+        if (isPairLocked(sel.asset)) {
+          const existing = getActiveSignalForPair(sel.asset);
+          window.showToast(`🔒 ${sel.asset.symbol} already has an OPEN ${existing.direction} signal! Wait for TP/SL hit.`, '⏳');
+          renderSignalHeaderBar(existing);
+          return;
+        }
+        chosen = sel;
+      }
+    }
+
+    if (!chosen) {
+      // STRICT PAIR LOCK: Only pick pairs that do NOT currently have an open signal
+      const unlockedNodes = nodes.filter(n => !isPairLocked(n.asset));
+      if (!unlockedNodes.length) {
+        window.showToast('🔒 All pairs currently have OPEN signals waiting for TP/SL!', '⏳');
+        return;
+      }
+
+      let pool = unlockedNodes.filter(n => !recentSymbols.includes(n.asset.symbol));
+      if (!pool.length) { recentSymbols = []; pool = unlockedNodes; }
+      chosen = pool[0];
+    }
+
     recentSymbols.push(chosen.asset.symbol);
     if (recentSymbols.length > 15) recentSymbols = recentSymbols.slice(-15);
 
@@ -1679,6 +2039,7 @@
 
     const sig = {
       symbol: chosen.asset.symbol,
+      binanceSymbol: binSym,
       assetClass,
       isLong,
       direction: spec.side,
@@ -1686,8 +2047,16 @@
       entryPrice,
       tp1Price,
       tp2Price,
-      slPrice
+      slPrice,
+      source: 'REALTIME_15M'
     };
+
+    // Lock pair until TP or SL hits
+    const reg = registerActiveSignal(sig);
+    if (!reg.ok && reg.reason === 'PAIR_LOCKED') {
+      window.showToast(`🔒 ${sig.symbol} already active — waiting for TP/SL hit`, '⏳');
+      return;
+    }
 
     chosen.entryZoneAnchor = entryPrice;
     chosen.lastSignal = sig;
@@ -1704,11 +2073,32 @@
     setText('sig-tp1', window.formatPrice(sig.tp1Price));
     setText('sig-tp2', window.formatPrice(sig.tp2Price));
     setText('sig-sl', window.formatPrice(sig.slPrice));
-    setText('sig-reasoning', `[${assetClass}] Real-Time 15m ${isLong ? 'Discount' : 'Premium'} Signal (${settings.rrMode.toUpperCase()}) on ${sig.symbol} @ ${window.formatPrice(entryPrice)}.`);
+    setText('sig-reasoning', `[${assetClass}] Locked 15m ${isLong ? 'Discount' : 'Premium'} Signal on ${sig.symbol} @ ${window.formatPrice(entryPrice)}. Auto-monitoring TP/SL.`);
 
     updateTerminalCard();
-    window.NeuralPnlManager?.logTrade({ ...sig, source: 'REALTIME_15M', entryDistancePct: 0 });
-    window.showToast(`[${assetClass}] ${isLong ? '🟢 BUY / LONG' : '🔴 SELL / SHORT'}: ${sig.symbol}`, isLong ? '🚀' : '🔻');
+    if (window.NeuralPnlManager?.logTrade) {
+      window.NeuralPnlManager.logTrade({ ...sig, entryDistancePct: 0, __alreadyTracked: true });
+    }
+    window.showToast(`[${assetClass}] ${isLong ? '🟢 BUY / LONG' : '🔴 SELL / SHORT'}: ${sig.symbol} (Locked until TP/SL)`, isLong ? '🚀' : '🔻');
+  }
+
+  // Hook into NeuralPnlManager.logTrade so Vision AI signals also obey Pair Lock & Auto TP/SL tracking
+  function hookExternalSignalLogger() {
+    if (!window.NeuralPnlManager || typeof window.NeuralPnlManager.logTrade !== 'function' || window.NeuralPnlManager.__lifecycleHooked) return;
+    const originalLogTrade = window.NeuralPnlManager.logTrade.bind(window.NeuralPnlManager);
+    window.NeuralPnlManager.logTrade = function (trade) {
+      if (trade && !trade.__alreadyTracked) {
+        const key = normalizeSymbolKey(trade.symbol || trade.pair);
+        if (key && isPairLocked(key)) {
+          window.showToast(`🔒 ${trade.symbol || trade.pair} already has an active signal waiting for TP/SL!`, '⏳');
+          return;
+        }
+        registerActiveSignal(trade);
+        renderSignalHeaderBar(trade);
+      }
+      return originalLogTrade(trade);
+    };
+    window.NeuralPnlManager.__lifecycleHooked = true;
   }
 
   // ---------------- LIVE TRADINGVIEW CHART MODAL ----------------
@@ -1737,7 +2127,7 @@
     if (bLink) bLink.href = `https://www.binance.com/en/futures/${rawSym}`;
     if (tvLink) tvLink.href = `https://www.tradingview.com/chart/?symbol=BINANCE:${rawSym}.P`;
 
-    const sig = node.lastSignal || {};
+    const sig = getActiveSignalForPair(node.asset) || node.lastSignal || {};
     const canvasEl = document.getElementById('klines-chart-canvas');
     if (window.TVPositionChart && canvasEl) {
       await window.TVPositionChart.renderIntoModal(canvasEl, {
@@ -1915,6 +2305,7 @@
     }
 
     mountUserThemesPanel();
+    renderAutoTpSlSummary();
     if (adminFlag) {
       mountAdminCommandCenter();
       loadAdminUsers();
@@ -1978,6 +2369,8 @@
     try { window.NeuralCanvasEngine?.init((idx) => window.__openChartModal(idx)); } catch (_) {}
     try { window.NeuralChartVision?.init(); } catch (_) {}
     try { window.NeuralPnlManager?.wireControls(); window.NeuralPnlManager?.load(); } catch (_) {}
+    hookExternalSignalLogger();
+    renderAutoTpSlSummary();
 
     const drag = (id, opts) => {
       const el = document.getElementById(id);
@@ -1990,8 +2383,8 @@
     drag('asset-terminal-card', { resetBtnSelector: '#reset-card-pos-btn', minimizeBtnSelector: '#term-minimize-tab-btn', bodySelector: '#term-collapsible-body', defaultBottom: '16px', defaultLeft: '16px' });
     drag('signal-alert-banner', { defaultTop: '16px', defaultLeft: '50%', defaultTransform: 'translateX(-50%)' });
 
-    on('quick-fire-signal-btn', 'click', generateNearEntrySignal);
-    on('term-generate-signal-btn', 'click', generateNearEntrySignal);
+    on('quick-fire-signal-btn', 'click', () => generateNearEntrySignal(false));
+    on('term-generate-signal-btn', 'click', () => generateNearEntrySignal(true));
     on('term-open-chart-btn', 'click', () => window.__openChartModal(window.NeuralCanvasEngine?.getSelectedIndex?.() || 0));
     on('term-copy-symbol-btn', 'click', () => window.copyCoinSymbolToClipboard(document.getElementById('term-symbol')?.textContent));
     on('close-chart-modal-btn', 'click', () => {
@@ -2001,7 +2394,8 @@
     });
     on('open-rr-calc-btn', 'click', () => {
       const n = window.NeuralCanvasEngine?.getNodes?.()[window.NeuralCanvasEngine?.getSelectedIndex?.() || 0];
-      window.openRRCalculatorWithSignal(n?.lastSignal || { pair: n?.asset?.symbol, entryPrice: n?.asset?.price, slPrice: (n?.asset?.price || 100) * 0.99 });
+      const sig = getActiveSignalForPair(n?.asset) || n?.lastSignal;
+      window.openRRCalculatorWithSignal(sig || { pair: n?.asset?.symbol, entryPrice: n?.asset?.price, slPrice: (n?.asset?.price || 100) * 0.99 });
     });
     on('close-rr-calc-modal-btn', 'click', () => {
       document.getElementById('rr-calculator-modal')?.classList.add('hidden');
@@ -2047,7 +2441,8 @@
 
     syncLivePrices();
     syncNewsFromBackend();
-    setInterval(syncLivePrices, 5000);
+    setInterval(syncLivePrices, 4000);
+    setInterval(monitorActiveSignalsForTpSl, 2000);
     setInterval(syncNewsFromBackend, 45000);
     setInterval(() => {
       try {
