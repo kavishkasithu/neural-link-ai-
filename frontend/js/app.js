@@ -1,7 +1,8 @@
 /**
  * MAIN FRONTEND APPLICATION CONTROLLER
- * Includes: True Real-Time Binance Vision Prices, 15m Structure Signals,
- * Pro Admin Command Center, 10 Full-Transform Trading Themes, and Crypto Bubbles Engine.
+ * Includes: Trading-Themed Login Screen (Live Ticker + Animated Candles + 4 Login Themes),
+ * Expanded Trader Sign Up Form, Real-Time Binance Vision Prices, 15m Structure Signals,
+ * Pro Admin Command Center, 10 Full-Transform Dashboard Themes, and Crypto Bubbles Engine.
  */
 (function () {
   let currentUser = null;
@@ -12,6 +13,7 @@
   let autoSignalTimer = null;
 
   const THEME_STORAGE_KEY = 'neural_ai_active_theme';
+  const LOGIN_THEME_KEY = 'neural_ai_login_theme';
   const SETTINGS_STORAGE_KEY = 'neural_admin_global_settings';
 
   const DEFAULT_ADMIN_SETTINGS = {
@@ -104,7 +106,391 @@
   }
 
   // =========================================================================
-  // 10 PRO FULL-TRANSFORM TRADING THEMES + CRYPTO BUBBLES ENGINE
+  // TRADING-THEMED LOGIN SCREEN (LIVE TICKER + CANDLESTICK CANVAS + 4 THEMES)
+  // =========================================================================
+  let loginRafId = null;
+  let activeLoginTheme = localStorage.getItem(LOGIN_THEME_KEY) || 'candle_emerald';
+
+  const LOGIN_THEMES = {
+    candle_emerald: {
+      name: '📊 Quant Emerald',
+      bg: 'radial-gradient(circle at 50% 25%, #04241a 0%, #020a12 65%, #010409 100%)',
+      grid: 'rgba(16, 185, 129, 0.07)',
+      up: 'rgba(16, 185, 129, 0.55)',
+      down: 'rgba(244, 63, 94, 0.50)',
+      ema: 'rgba(56, 189, 248, 0.75)',
+      border: 'rgba(16, 185, 129, 0.55)',
+      glow: 'rgba(16, 185, 129, 0.22)',
+      accent: '#34d399'
+    },
+    bloomberg_amber: {
+      name: '🟧 Bloomberg Desk',
+      bg: 'radial-gradient(circle at 50% 20%, #241302 0%, #090603 65%, #030201 100%)',
+      grid: 'rgba(255, 140, 0, 0.07)',
+      up: 'rgba(255, 165, 0, 0.62)',
+      down: 'rgba(239, 68, 68, 0.48)',
+      ema: 'rgba(253, 224, 71, 0.78)',
+      border: 'rgba(255, 140, 0, 0.60)',
+      glow: 'rgba(255, 140, 0, 0.22)',
+      accent: '#fb923c'
+    },
+    dubai_gold: {
+      name: '👑 Gold Vault',
+      bg: 'radial-gradient(circle at 50% 20%, #291e05 0%, #0a0803 65%, #030201 100%)',
+      grid: 'rgba(251, 191, 36, 0.06)',
+      up: 'rgba(251, 191, 36, 0.60)',
+      down: 'rgba(244, 63, 94, 0.42)',
+      ema: 'rgba(254, 240, 138, 0.80)',
+      border: 'rgba(251, 191, 36, 0.62)',
+      glow: 'rgba(245, 158, 11, 0.24)',
+      accent: '#fbbf24'
+    },
+    cyber_violet: {
+      name: '⛩️ Cyber Quant',
+      bg: 'radial-gradient(circle at 30% 20%, #25063b 0%, #090418 65%, #030208 100%)',
+      grid: 'rgba(236, 72, 153, 0.07)',
+      up: 'rgba(34, 211, 238, 0.60)',
+      down: 'rgba(236, 72, 153, 0.55)',
+      ema: 'rgba(192, 132, 252, 0.82)',
+      border: 'rgba(236, 72, 153, 0.60)',
+      glow: 'rgba(168, 85, 247, 0.26)',
+      accent: '#f472b6'
+    }
+  };
+
+  function applyLoginScreenTheme(themeKey) {
+    const t = LOGIN_THEMES[themeKey] || LOGIN_THEMES.candle_emerald;
+    activeLoginTheme = LOGIN_THEMES[themeKey] ? themeKey : 'candle_emerald';
+    localStorage.setItem(LOGIN_THEME_KEY, activeLoginTheme);
+
+    const overlay = document.getElementById('boot-intro-overlay');
+    if (overlay) overlay.style.background = t.bg;
+
+    const form = document.getElementById('user-auth-form');
+    const card = form ? (form.closest('[class*="rounded"]') || form.parentElement) : null;
+    if (card && card !== overlay) {
+      card.style.position = 'relative';
+      card.style.zIndex = '5';
+      card.style.background = 'rgba(6, 11, 22, 0.84)';
+      card.style.backdropFilter = 'blur(18px)';
+      card.style.border = `1px solid ${t.border}`;
+      card.style.boxShadow = `0 16px 48px rgba(0,0,0,0.75), 0 0 32px ${t.glow}`;
+    }
+
+    document.querySelectorAll('.login-theme-pill-btn').forEach(btn => {
+      const act = btn.dataset.loginTheme === activeLoginTheme;
+      btn.style.borderColor = act ? t.accent : 'rgba(148,163,184,0.28)';
+      btn.style.background = act ? 'rgba(15, 23, 42, 0.96)' : 'rgba(6, 12, 24, 0.72)';
+      btn.style.color = act ? t.accent : '#94a3b8';
+    });
+  }
+
+  async function updateLoginTickerTape() {
+    const track = document.getElementById('login-live-ticker-track');
+    if (!track) return;
+
+    const pairs = [
+      { sym: 'BTCUSDT', label: 'BTC/USDT' },
+      { sym: 'ETHUSDT', label: 'ETH/USDT' },
+      { sym: 'SOLUSDT', label: 'SOL/USDT' },
+      { sym: 'BNBUSDT', label: 'BNB/USDT' },
+      { sym: 'XRPUSDT', label: 'XRP/USDT' },
+      { sym: 'AVAXUSDT', label: 'AVAX/USDT' },
+      { sym: 'PAXGUSDT', label: 'XAU/USD' },
+      { sym: 'DOGEUSDT', label: 'DOGE/USDT' }
+    ];
+
+    try {
+      const resp = await fetch('https://data-api.binance.vision/api/v3/ticker/24hr');
+      if (!resp.ok) return;
+      const list = await resp.json();
+      const map = {};
+      if (Array.isArray(list)) {
+        list.forEach(item => { map[item.symbol] = item; });
+      }
+
+      const chips = pairs.map(p => {
+        const d = map[p.sym];
+        const price = d ? window.formatPrice(parseFloat(d.lastPrice)) : '--';
+        const chg = d ? parseFloat(d.priceChangePercent) : 0;
+        const color = chg >= 0 ? '#34d399' : '#fb7185';
+        const sign = chg >= 0 ? '+' : '';
+        return `<span style="display:inline-flex;align-items:center;gap:6px;padding:0 18px;font-family:'JetBrains Mono',monospace;font-size:11px;white-space:nowrap;">
+          <strong style="color:#f8fafc;">${p.label}</strong>
+          <span style="color:#cbd5e1;">${price}</span>
+          <span style="color:${color};font-weight:800;">${sign}${chg.toFixed(2)}%</span>
+        </span>`;
+      }).join('');
+
+      track.innerHTML = chips + chips;
+    } catch (_) {}
+  }
+
+  function initTradingLoginScreen() {
+    const overlay = document.getElementById('boot-intro-overlay');
+    if (!overlay || document.getElementById('login-trading-canvas')) return;
+
+    overlay.style.overflowY = 'auto';
+    overlay.style.paddingTop = '48px';
+    overlay.style.paddingBottom = '56px';
+
+    // Ticker keyframe animation CSS
+    if (!document.getElementById('login-trading-css')) {
+      const st = document.createElement('style');
+      st.id = 'login-trading-css';
+      st.textContent = `
+        @keyframes loginTickerScroll {
+          0%   { transform: translateX(0); }
+          100% { transform: translateX(-50%); }
+        }
+        #login-live-ticker-track {
+          display: inline-flex;
+          animation: loginTickerScroll 28s linear infinite;
+        }
+        #login-live-ticker-track:hover {
+          animation-play-state: paused;
+        }
+        .signup-extra-input {
+          width: 100%;
+          padding: 7px 10px;
+          border-radius: 8px;
+          background: rgba(2, 6, 23, 0.88);
+          border: 1px solid rgba(56, 189, 248, 0.32);
+          color: #f8fafc;
+          font-size: 11px;
+          outline: none;
+          transition: border-color 0.15s ease;
+        }
+        .signup-extra-input:focus {
+          border-color: #22d3ee;
+        }
+      `;
+      document.head.appendChild(st);
+    }
+
+    // 1. Animated Candlestick Background Canvas
+    const canvas = document.createElement('canvas');
+    canvas.id = 'login-trading-canvas';
+    canvas.style.cssText = 'position:fixed; inset:0; width:100vw; height:100vh; z-index:0; pointer-events:none;';
+    overlay.prepend(canvas);
+    const ctx = canvas.getContext('2d');
+
+    const candleCount = 46;
+    const candles = [];
+    let base = 50;
+    for (let i = 0; i < candleCount; i++) {
+      const open = base;
+      const move = (Math.random() - 0.48) * 6.5;
+      const close = Math.max(18, Math.min(82, open + move));
+      const high = Math.max(open, close) + Math.random() * 4;
+      const low = Math.min(open, close) - Math.random() * 4;
+      candles.push({ open, close, high, low });
+      base = close;
+    }
+
+    let tickCounter = 0;
+    const renderLoginBg = () => {
+      if (overlay.classList.contains('hidden')) {
+        loginRafId = requestAnimationFrame(renderLoginBg);
+        return;
+      }
+
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+        canvas.width = Math.round(w * dpr);
+        canvas.height = Math.round(h * dpr);
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+
+      const t = LOGIN_THEMES[activeLoginTheme] || LOGIN_THEMES.candle_emerald;
+
+      // Subtle institutional chart grid
+      ctx.strokeStyle = t.grid;
+      ctx.lineWidth = 1;
+      for (let x = 0; x < w; x += 56) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+      }
+      for (let y = 0; y < h; y += 56) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+      }
+
+      // Live ticking last candle + periodic shift
+      tickCounter++;
+      const last = candles[candles.length - 1];
+      last.close = Math.max(18, Math.min(82, last.close + (Math.random() - 0.5) * 0.45));
+      last.high = Math.max(last.high, last.close);
+      last.low = Math.min(last.low, last.close);
+
+      if (tickCounter % 70 === 0) {
+        candles.shift();
+        const o = last.close;
+        const c = Math.max(20, Math.min(80, o + (Math.random() - 0.49) * 5));
+        candles.push({ open: o, close: c, high: Math.max(o, c) + Math.random() * 3, low: Math.min(o, c) - Math.random() * 3 });
+      }
+
+      const step = w / candleCount;
+      const bodyW = Math.max(4, step * 0.56);
+      const toY = (v) => h * 0.88 - (v / 100) * (h * 0.72);
+
+      // Draw Candlesticks
+      candles.forEach((c, idx) => {
+        const x = idx * step + step * 0.5;
+        const isUp = c.close >= c.open;
+        const col = isUp ? t.up : t.down;
+
+        ctx.strokeStyle = col;
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(x, toY(c.high));
+        ctx.lineTo(x, toY(c.low));
+        ctx.stroke();
+
+        const topY = Math.min(toY(c.open), toY(c.close));
+        const bodyH = Math.max(2, Math.abs(toY(c.close) - toY(c.open)));
+        ctx.fillStyle = col;
+        ctx.fillRect(x - bodyW / 2, topY, bodyW, bodyH);
+      });
+
+      // Smooth EMA Curve
+      ctx.beginPath();
+      ctx.strokeStyle = t.ema;
+      ctx.lineWidth = 2;
+      let emaVal = candles[0].close;
+      candles.forEach((c, idx) => {
+        emaVal = emaVal * 0.82 + c.close * 0.18;
+        const x = idx * step + step * 0.5;
+        const y = toY(emaVal);
+        if (idx === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+
+      loginRafId = requestAnimationFrame(renderLoginBg);
+    };
+    if (loginRafId) cancelAnimationFrame(loginRafId);
+    loginRafId = requestAnimationFrame(renderLoginBg);
+
+    // 2. Top Live Scrolling Market Ticker Bar
+    const tickerBar = document.createElement('div');
+    tickerBar.id = 'login-live-ticker-bar';
+    tickerBar.style.cssText = [
+      'position:fixed', 'top:0', 'left:0', 'right:0', 'z-index:20',
+      'height:34px', 'display:flex', 'align-items:center', 'overflow:hidden',
+      'background:rgba(3, 8, 18, 0.90)', 'backdrop-filter:blur(10px)',
+      'border-bottom:1px solid rgba(56, 189, 248, 0.25)'
+    ].join(';');
+    tickerBar.innerHTML = `
+      <div style="padding:0 12px; height:100%; display:flex; align-items:center; gap:6px; background:rgba(16,185,129,0.16); border-right:1px solid rgba(56,189,248,0.25); font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:800; color:#34d399; z-index:2; white-space:nowrap;">
+        <span>●</span><span>LIVE FEED</span>
+      </div>
+      <div style="flex:1; overflow:hidden;">
+        <div id="login-live-ticker-track"></div>
+      </div>
+    `;
+    overlay.appendChild(tickerBar);
+    updateLoginTickerTape();
+    setInterval(() => {
+      if (!overlay.classList.contains('hidden')) updateLoginTickerTape();
+    }, 15000);
+
+    // 3. Bottom Login Screen Trading Theme Switcher Bar
+    const switcher = document.createElement('div');
+    switcher.id = 'login-theme-switcher-bar';
+    switcher.style.cssText = [
+      'position:fixed', 'bottom:14px', 'left:50%', 'transform:translateX(-50%)',
+      'z-index:20', 'display:flex', 'flex-wrap:wrap', 'justify-content:center', 'gap:6px',
+      'padding:5px 8px', 'border-radius:999px',
+      'background:rgba(3, 8, 18, 0.85)', 'backdrop-filter:blur(12px)',
+      'border:1px solid rgba(56, 189, 248, 0.28)'
+    ].join(';');
+
+    switcher.innerHTML = Object.entries(LOGIN_THEMES).map(([k, cfg]) => `
+      <button type="button" class="login-theme-pill-btn" data-login-theme="${k}"
+        style="padding:4px 10px; border-radius:999px; border:1px solid rgba(148,163,184,0.28); background:rgba(6,12,24,0.72); color:#94a3b8; font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:800; cursor:pointer;">
+        ${cfg.name}
+      </button>
+    `).join('');
+    overlay.appendChild(switcher);
+
+    switcher.querySelectorAll('.login-theme-pill-btn').forEach(btn => {
+      btn.addEventListener('click', () => applyLoginScreenTheme(btn.dataset.loginTheme));
+    });
+
+    applyLoginScreenTheme(activeLoginTheme);
+  }
+
+  // =========================================================================
+  // EXPANDED SIGN UP FORM DETAILS (INJECTED INSIDE #user-auth-form)
+  // =========================================================================
+  function injectExtraSignupFields() {
+    const form = document.getElementById('user-auth-form');
+    const nameWrap = document.getElementById('user-signup-name-wrap');
+    if (!form || !nameWrap || document.getElementById('user-signup-extra-wrap')) return;
+
+    const extra = document.createElement('div');
+    extra.id = 'user-signup-extra-wrap';
+    extra.className = 'hidden space-y-2';
+    extra.innerHTML = `
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+        <div>
+          <label style="display:block; font-size:9px; font-weight:700; color:#7dd3fc; margin-bottom:3px;">WHATSAPP / PHONE *</label>
+          <input id="user-phone-input" type="tel" placeholder="+94 7X XXX XXXX" class="signup-extra-input" />
+        </div>
+        <div>
+          <label style="display:block; font-size:9px; font-weight:700; color:#7dd3fc; margin-bottom:3px;">TELEGRAM / DISCORD</label>
+          <input id="user-telegram-input" type="text" placeholder="@username" class="signup-extra-input" />
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+        <div>
+          <label style="display:block; font-size:9px; font-weight:700; color:#7dd3fc; margin-bottom:3px;">PRIMARY MARKET</label>
+          <select id="user-market-input" class="signup-extra-input">
+            <option value="Crypto Futures">Crypto Futures</option>
+            <option value="Forex & Gold (XAU/USD)">Forex & Gold (XAU/USD)</option>
+            <option value="Indices (NAS100 / US30)">Indices (NAS100 / US30)</option>
+            <option value="Multi-Market (All)">Multi-Market (All)</option>
+          </select>
+        </div>
+        <div>
+          <label style="display:block; font-size:9px; font-weight:700; color:#7dd3fc; margin-bottom:3px;">EXPERIENCE LEVEL</label>
+          <select id="user-experience-input" class="signup-extra-input">
+            <option value="Beginner (< 1 Year)">Beginner (&lt; 1 Year)</option>
+            <option value="Intermediate (1-3 Years)">Intermediate (1–3 Years)</option>
+            <option value="Pro / Prop Firm Trader">Pro / Prop Firm Trader</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+        <div>
+          <label style="display:block; font-size:9px; font-weight:700; color:#7dd3fc; margin-bottom:3px;">TRADING STRATEGY</label>
+          <select id="user-style-input" class="signup-extra-input">
+            <option value="SMC / ICT">SMC / ICT</option>
+            <option value="Price Action">Price Action</option>
+            <option value="Scalping (1m-15m)">Scalping (1m–15m)</option>
+            <option value="Swing / Position">Swing / Position</option>
+          </select>
+        </div>
+        <div>
+          <label style="display:block; font-size:9px; font-weight:700; color:#7dd3fc; margin-bottom:3px;">COUNTRY</label>
+          <input id="user-country-input" type="text" placeholder="e.g. Sri Lanka" class="signup-extra-input" />
+        </div>
+      </div>
+    `;
+
+    if (nameWrap.nextElementSibling) {
+      nameWrap.parentElement.insertBefore(extra, nameWrap.nextElementSibling);
+    } else {
+      nameWrap.parentElement.appendChild(extra);
+    }
+  }
+
+  // =========================================================================
+  // 10 PRO FULL-TRANSFORM DASHBOARD THEMES + CRYPTO BUBBLES ENGINE
   // =========================================================================
   let activeTheme = localStorage.getItem(THEME_STORAGE_KEY) || 'neural_default';
   let bubbleCanvas = null;
@@ -120,9 +506,7 @@
       desc: 'Default Cyan Glass',
       badge: '#22d3ee',
       isBubbles: false,
-      css: `
-        body[data-neural-theme="neural_default"] #neural-canvas { filter: none !important; }
-      `
+      css: `body[data-neural-theme="neural_default"] #neural-canvas { filter: none !important; }`
     },
     {
       id: 'crypto_bubbles',
@@ -130,11 +514,7 @@
       desc: 'Live 3D Physics',
       badge: '#34d399',
       isBubbles: true,
-      css: `
-        body[data-neural-theme="crypto_bubbles"] {
-          background: radial-gradient(circle at 50% 35%, #07192b 0%, #02060c 100%) !important;
-        }
-      `
+      css: `body[data-neural-theme="crypto_bubbles"] { background: radial-gradient(circle at 50% 35%, #07192b 0%, #02060c 100%) !important; }`
     },
     {
       id: 'bloomberg_pro',
@@ -163,12 +543,8 @@
           border-radius: 6px !important;
           box-shadow: 0 0 24px rgba(255, 140, 0, 0.16) !important;
         }
-        body[data-neural-theme="bloomberg_pro"] #protected-website-ui [class*="text-cyan"] {
-          color: #ffb347 !important;
-        }
-        body[data-neural-theme="bloomberg_pro"] #protected-website-ui [class*="border-cyan"] {
-          border-color: rgba(255, 140, 0, 0.45) !important;
-        }
+        body[data-neural-theme="bloomberg_pro"] #protected-website-ui [class*="text-cyan"] { color: #ffb347 !important; }
+        body[data-neural-theme="bloomberg_pro"] #protected-website-ui [class*="border-cyan"] { border-color: rgba(255, 140, 0, 0.45) !important; }
         body[data-neural-theme="bloomberg_pro"] #quick-fire-signal-btn,
         body[data-neural-theme="bloomberg_pro"] #term-generate-signal-btn {
           background: linear-gradient(90deg, #ff7b00, #ffb700) !important;
@@ -184,12 +560,8 @@
       badge: '#2962ff',
       isBubbles: false,
       css: `
-        body[data-neural-theme="tradingview_dark"] {
-          background: #131722 !important;
-        }
-        body[data-neural-theme="tradingview_dark"] #neural-canvas {
-          filter: hue-rotate(25deg) saturate(1.15) brightness(0.75) !important;
-        }
+        body[data-neural-theme="tradingview_dark"] { background: #131722 !important; }
+        body[data-neural-theme="tradingview_dark"] #neural-canvas { filter: hue-rotate(25deg) saturate(1.15) brightness(0.75) !important; }
         body[data-neural-theme="tradingview_dark"] #protected-website-ui [id$="-widget"],
         body[data-neural-theme="tradingview_dark"] #protected-website-ui #asset-terminal-card,
         body[data-neural-theme="tradingview_dark"] #protected-website-ui #hud-wrapper-tab,
@@ -199,9 +571,7 @@
           border: 1px solid #2a2e39 !important;
           box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55) !important;
         }
-        body[data-neural-theme="tradingview_dark"] #protected-website-ui [class*="text-cyan"] {
-          color: #5b9cf6 !important;
-        }
+        body[data-neural-theme="tradingview_dark"] #protected-website-ui [class*="text-cyan"] { color: #5b9cf6 !important; }
         body[data-neural-theme="tradingview_dark"] #quick-fire-signal-btn,
         body[data-neural-theme="tradingview_dark"] #term-generate-signal-btn {
           background: #2962ff !important;
@@ -243,12 +613,8 @@
           background: rgba(241, 245, 249, 0.92) !important;
           border-color: rgba(15, 23, 42, 0.12) !important;
         }
-        body[data-neural-theme="apple_frost_light"] #protected-website-ui [class*="text-emerald"] {
-          color: #059669 !important;
-        }
-        body[data-neural-theme="apple_frost_light"] #protected-website-ui [class*="text-rose"] {
-          color: #e11d48 !important;
-        }
+        body[data-neural-theme="apple_frost_light"] #protected-website-ui [class*="text-emerald"] { color: #059669 !important; }
+        body[data-neural-theme="apple_frost_light"] #protected-website-ui [class*="text-rose"] { color: #e11d48 !important; }
       `
     },
     {
@@ -258,12 +624,8 @@
       badge: '#e2e8f0',
       isBubbles: false,
       css: `
-        body[data-neural-theme="phantom_oled"] {
-          background: #000000 !important;
-        }
-        body[data-neural-theme="phantom_oled"] #neural-canvas {
-          filter: grayscale(1) contrast(1.25) brightness(0.75) !important;
-        }
+        body[data-neural-theme="phantom_oled"] { background: #000000 !important; }
+        body[data-neural-theme="phantom_oled"] #neural-canvas { filter: grayscale(1) contrast(1.25) brightness(0.75) !important; }
         body[data-neural-theme="phantom_oled"] #protected-website-ui [id$="-widget"],
         body[data-neural-theme="phantom_oled"] #protected-website-ui #asset-terminal-card,
         body[data-neural-theme="phantom_oled"] #protected-website-ui #hud-wrapper-tab,
@@ -273,12 +635,8 @@
           border: 1px solid rgba(255, 255, 255, 0.24) !important;
           box-shadow: 0 0 24px rgba(255, 255, 255, 0.06) !important;
         }
-        body[data-neural-theme="phantom_oled"] #protected-website-ui [class*="text-cyan"] {
-          color: #e2e8f0 !important;
-        }
-        body[data-neural-theme="phantom_oled"] #protected-website-ui [class*="border-cyan"] {
-          border-color: rgba(255, 255, 255, 0.22) !important;
-        }
+        body[data-neural-theme="phantom_oled"] #protected-website-ui [class*="text-cyan"] { color: #e2e8f0 !important; }
+        body[data-neural-theme="phantom_oled"] #protected-website-ui [class*="border-cyan"] { border-color: rgba(255, 255, 255, 0.22) !important; }
       `
     },
     {
@@ -296,9 +654,7 @@
             linear-gradient(90deg, rgba(16, 185, 129, 0.05) 1px, transparent 1px) !important;
           background-size: 100% 100%, 40px 40px, 40px 40px !important;
         }
-        body[data-neural-theme="wallst_quant"] #neural-canvas {
-          filter: hue-rotate(-45deg) saturate(1.6) brightness(0.92) !important;
-        }
+        body[data-neural-theme="wallst_quant"] #neural-canvas { filter: hue-rotate(-45deg) saturate(1.6) brightness(0.92) !important; }
         body[data-neural-theme="wallst_quant"] #protected-website-ui [id$="-widget"],
         body[data-neural-theme="wallst_quant"] #protected-website-ui #asset-terminal-card,
         body[data-neural-theme="wallst_quant"] #protected-website-ui #hud-wrapper-tab,
@@ -307,9 +663,7 @@
           border: 1px solid rgba(16, 185, 129, 0.6) !important;
           box-shadow: 0 0 26px rgba(16, 185, 129, 0.20) !important;
         }
-        body[data-neural-theme="wallst_quant"] #protected-website-ui [class*="text-cyan"] {
-          color: #6ee7b7 !important;
-        }
+        body[data-neural-theme="wallst_quant"] #protected-website-ui [class*="text-cyan"] { color: #6ee7b7 !important; }
       `
     },
     {
@@ -328,9 +682,7 @@
             linear-gradient(90deg, rgba(34, 211, 238, 0.05) 1px, transparent 1px) !important;
           background-size: 100% 100%, 100% 100%, 36px 36px, 36px 36px !important;
         }
-        body[data-neural-theme="tokyo_drift"] #neural-canvas {
-          filter: hue-rotate(108deg) saturate(2.1) brightness(1.05) !important;
-        }
+        body[data-neural-theme="tokyo_drift"] #neural-canvas { filter: hue-rotate(108deg) saturate(2.1) brightness(1.05) !important; }
         body[data-neural-theme="tokyo_drift"] #protected-website-ui [id$="-widget"],
         body[data-neural-theme="tokyo_drift"] #protected-website-ui #asset-terminal-card,
         body[data-neural-theme="tokyo_drift"] #protected-website-ui #hud-wrapper-tab,
@@ -339,9 +691,7 @@
           border: 1px solid rgba(236, 72, 153, 0.72) !important;
           box-shadow: 0 0 28px rgba(236, 72, 153, 0.26), inset 0 0 14px rgba(34, 211, 238, 0.14) !important;
         }
-        body[data-neural-theme="tokyo_drift"] #protected-website-ui [class*="text-cyan"] {
-          color: #f9a8d4 !important;
-        }
+        body[data-neural-theme="tokyo_drift"] #protected-website-ui [class*="text-cyan"] { color: #f9a8d4 !important; }
       `
     },
     {
@@ -351,12 +701,8 @@
       badge: '#fbbf24',
       isBubbles: false,
       css: `
-        body[data-neural-theme="dubai_gold"] {
-          background: radial-gradient(circle at 50% 15%, #2b1e06 0%, #090703 65%, #030201 100%) !important;
-        }
-        body[data-neural-theme="dubai_gold"] #neural-canvas {
-          filter: hue-rotate(192deg) saturate(1.75) brightness(0.95) !important;
-        }
+        body[data-neural-theme="dubai_gold"] { background: radial-gradient(circle at 50% 15%, #2b1e06 0%, #090703 65%, #030201 100%) !important; }
+        body[data-neural-theme="dubai_gold"] #neural-canvas { filter: hue-rotate(192deg) saturate(1.75) brightness(0.95) !important; }
         body[data-neural-theme="dubai_gold"] #protected-website-ui [id$="-widget"],
         body[data-neural-theme="dubai_gold"] #protected-website-ui #asset-terminal-card,
         body[data-neural-theme="dubai_gold"] #protected-website-ui #hud-wrapper-tab,
@@ -365,12 +711,8 @@
           border: 1px solid rgba(251, 191, 36, 0.68) !important;
           box-shadow: 0 0 28px rgba(245, 158, 11, 0.24), inset 0 0 12px rgba(253, 224, 71, 0.10) !important;
         }
-        body[data-neural-theme="dubai_gold"] #protected-website-ui [class*="text-cyan"] {
-          color: #fde68a !important;
-        }
-        body[data-neural-theme="dubai_gold"] #protected-website-ui [class*="border-cyan"] {
-          border-color: rgba(251, 191, 36, 0.45) !important;
-        }
+        body[data-neural-theme="dubai_gold"] #protected-website-ui [class*="text-cyan"] { color: #fde68a !important; }
+        body[data-neural-theme="dubai_gold"] #protected-website-ui [class*="border-cyan"] { border-color: rgba(251, 191, 36, 0.45) !important; }
       `
     },
     {
@@ -380,12 +722,8 @@
       badge: '#ef4444',
       isBubbles: false,
       css: `
-        body[data-neural-theme="eclipse_crimson"] {
-          background: radial-gradient(circle at 50% 25%, #380710 0%, #0c0204 70%, #040102 100%) !important;
-        }
-        body[data-neural-theme="eclipse_crimson"] #neural-canvas {
-          filter: hue-rotate(148deg) saturate(2.2) brightness(0.92) !important;
-        }
+        body[data-neural-theme="eclipse_crimson"] { background: radial-gradient(circle at 50% 25%, #380710 0%, #0c0204 70%, #040102 100%) !important; }
+        body[data-neural-theme="eclipse_crimson"] #neural-canvas { filter: hue-rotate(148deg) saturate(2.2) brightness(0.92) !important; }
         body[data-neural-theme="eclipse_crimson"] #protected-website-ui [id$="-widget"],
         body[data-neural-theme="eclipse_crimson"] #protected-website-ui #asset-terminal-card,
         body[data-neural-theme="eclipse_crimson"] #protected-website-ui #hud-wrapper-tab,
@@ -394,12 +732,8 @@
           border: 1px solid rgba(239, 68, 68, 0.72) !important;
           box-shadow: 0 0 28px rgba(239, 68, 68, 0.28), inset 0 0 12px rgba(251, 146, 60, 0.12) !important;
         }
-        body[data-neural-theme="eclipse_crimson"] #protected-website-ui [class*="text-cyan"] {
-          color: #fca5a5 !important;
-        }
-        body[data-neural-theme="eclipse_crimson"] #protected-website-ui [class*="border-cyan"] {
-          border-color: rgba(239, 68, 68, 0.45) !important;
-        }
+        body[data-neural-theme="eclipse_crimson"] #protected-website-ui [class*="text-cyan"] { color: #fca5a5 !important; }
+        body[data-neural-theme="eclipse_crimson"] #protected-website-ui [class*="border-cyan"] { border-color: rgba(239, 68, 68, 0.45) !important; }
       `
     }
   ];
@@ -655,7 +989,6 @@
     });
 
     adminPanel.style.overflowY = 'auto';
-
     if (document.getElementById('admin-pro-hub')) return;
 
     const s = loadAdminSettings();
@@ -1307,10 +1640,15 @@
     calculateRR();
   };
 
-  // ---------------- AUTH & ADMIN PANEL ----------------
+  // ---------------- AUTH & EXPANDED SIGN UP ----------------
   function initAuth() {
+    injectExtraSignupFields();
+
     const form = document.getElementById('user-auth-form');
     const nameWrap = document.getElementById('user-signup-name-wrap');
+    const extraWrap = document.getElementById('user-signup-extra-wrap');
+    const nameInput = document.getElementById('user-name-input');
+    const phoneInput = document.getElementById('user-phone-input');
     const submitBtn = document.getElementById('user-submit-btn');
     const errEl = document.getElementById('user-auth-error-msg');
     const okEl = document.getElementById('user-auth-success-msg');
@@ -1320,7 +1658,10 @@
       errEl?.classList.add('hidden');
       okEl?.classList.add('hidden');
       nameWrap?.classList.toggle('hidden', !signup);
-      if (submitBtn) submitBtn.textContent = signup ? 'SEND SIGN UP REQUEST TO ADMIN ⚡' : 'LOGIN TO NEURAL PLATFORM ⚡';
+      extraWrap?.classList.toggle('hidden', !signup);
+      if (nameInput) nameInput.required = signup;
+      if (phoneInput) phoneInput.required = signup;
+      if (submitBtn) submitBtn.textContent = signup ? 'SEND TRADER SIGN UP REQUEST ⚡' : 'LOGIN TO NEURAL PLATFORM ⚡';
     }
 
     on('tab-login-mode-btn', 'click', () => setMode(false));
@@ -1336,13 +1677,27 @@
         const identifier = (document.getElementById('user-email-input')?.value || '').trim();
         const password = (document.getElementById('user-password-input')?.value || '').trim();
 
+        const extraDetails = isSignUpMode ? {
+          phone: (document.getElementById('user-phone-input')?.value || '').trim(),
+          telegram: (document.getElementById('user-telegram-input')?.value || '').trim(),
+          market: document.getElementById('user-market-input')?.value || '',
+          experience: document.getElementById('user-experience-input')?.value || '',
+          tradingStyle: document.getElementById('user-style-input')?.value || '',
+          country: (document.getElementById('user-country-input')?.value || '').trim()
+        } : {};
+
+        if (isSignUpMode && !extraDetails.phone) {
+          if (errEl) { errEl.textContent = 'Please enter your WhatsApp / Phone number.'; errEl.classList.remove('hidden'); }
+          return;
+        }
+
         try {
           const baseUrl = window.NEURAL_CONFIG?.API_BASE_URL || '';
           const endpoint = isSignUpMode ? '/api/auth/signup' : '/api/auth/login';
           const resp = await fetch(`${baseUrl}${endpoint}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, identifier, password })
+            body: JSON.stringify({ name, identifier, password, ...extraDetails })
           });
           const data = await resp.json();
 
@@ -1352,7 +1707,7 @@
           }
 
           if (isSignUpMode) {
-            if (okEl) { okEl.textContent = data.message || 'Sign Up request sent to Admin!'; okEl.classList.remove('hidden'); }
+            if (okEl) { okEl.textContent = data.message || 'Trader Sign Up request sent to Admin for approval!'; okEl.classList.remove('hidden'); }
             form.reset();
             setMode(false);
             return;
@@ -1417,12 +1772,15 @@
       const list = document.getElementById('admin-users-list');
       if (!list) return;
       list.innerHTML = data.users.map((u, idx) => `
-        <div class="p-2 rounded-xl bg-slate-950/85 border border-cyan-500/25 space-y-1 text-[10px]">
-          <div class="flex justify-between">
-            <span class="font-bold text-white">${u.email}</span>
-            <span class="${u.status === 'approved' ? 'text-emerald-300' : 'text-amber-300'} font-bold">${u.status.toUpperCase()}</span>
+        <div class="p-2.5 rounded-xl bg-slate-950/90 border border-cyan-500/25 space-y-1 text-[10px]">
+          <div class="flex justify-between items-center">
+            <span class="font-bold text-white">${u.name || u.email}</span>
+            <span class="${u.status === 'approved' ? 'text-emerald-300' : 'text-amber-300'} font-bold">${(u.status || 'pending').toUpperCase()}</span>
           </div>
-          <div class="text-cyan-200/70">Pass: <span class="text-amber-200">${u.password}</span></div>
+          <div class="text-cyan-200/80">📧 ${u.email} | 🔑 <span class="text-amber-200">${u.password}</span></div>
+          ${u.phone ? `<div class="text-emerald-300/90">📱 ${u.phone}${u.telegram ? ` • ✈️ ${u.telegram}` : ''}</div>` : ''}
+          ${(u.market || u.experience) ? `<div class="text-slate-300">📊 ${u.market || '-'} • ${u.experience || '-'}</div>` : ''}
+          ${(u.tradingStyle || u.country) ? `<div class="text-slate-400">🎯 ${u.tradingStyle || '-'}${u.country ? ` • 🌍 ${u.country}` : ''}</div>` : ''}
           <div class="flex gap-1 pt-1">
             <button type="button" onclick="window.__adminSetStatus(${idx}, '${u.status === 'approved' ? 'pending' : 'approved'}')"
               class="flex-1 py-1 rounded bg-emerald-500/25 text-emerald-200 border border-emerald-400/40 font-bold">
@@ -1452,6 +1810,7 @@
   // ---------------- BOOTSTRAP EVERYTHING ----------------
   window.addEventListener('load', () => {
     injectThemeCss();
+    initTradingLoginScreen();
     initAuth();
 
     try { window.NeuralCanvasEngine?.init((idx) => window.__openChartModal(idx)); } catch (_) {}
