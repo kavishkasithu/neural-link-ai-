@@ -1,5 +1,5 @@
 /**
- * MAIN FRONTEND APPLICATION CONTROLLER
+ * MAIN FRONTEND APPLICATION CONTROLLER (TRUE REAL-TIME PRICES & SIGNALS)
  */
 (function () {
   let currentUser = null;
@@ -7,7 +7,6 @@
   let isSignUpMode = false;
   let hasActiveSignal = false;
   let recentSymbols = [];
-  let rrIsCryptoMode = true;
 
   window.formatPrice = function (val) {
     if (val === undefined || val === null || isNaN(val)) return '$0.00';
@@ -51,32 +50,75 @@
       : { isLong: true, side: 'BUY / LONG', shortLabel: 'BUY', mode: 'green_buy' };
   }
 
-  // ---------------- LIVE MARKET DATA FROM BACKEND ----------------
-  async function syncBinanceFromBackend() {
-    try {
-      const resp = await fetch(`${window.NEURAL_CONFIG.API_BASE_URL}/api/market/binance-scan`);
-      if (!resp.ok) return;
-      const data = await resp.json();
-      if (!data.ok || !Array.isArray(data.pairs)) return;
+  function normalizeSymbolKey(asset) {
+    if (!asset) return '';
+    if (asset.binanceSymbol) return String(asset.binanceSymbol).toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const clean = String(asset.symbol || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    return clean.endsWith('USDT') ? clean : `${clean.replace(/USD$/, '')}USDT`;
+  }
 
-      const map = {};
-      data.pairs.forEach(p => { map[p.binanceSymbol] = p; });
-      const nodes = window.NeuralCanvasEngine.getNodes();
-      nodes.forEach(n => {
-        if (n.asset && map[n.asset.binanceSymbol]) {
-          n.asset.price = map[n.asset.binanceSymbol].price;
-          n.asset.change = map[n.asset.binanceSymbol].change;
-          n.asset.fundingRate = map[n.asset.binanceSymbol].fundingRate;
+  // ---------------- LIVE REAL-TIME PRICE SYNC (DIRECT BINANCE VISION + BACKEND) ----------------
+  async function syncLivePrices() {
+    const priceMap = {};
+    const fundingMap = {};
+
+    // 1. Direct Binance Data Vision (works everywhere, instant real prices)
+    try {
+      const resp = await fetch('https://data-api.binance.vision/api/v3/ticker/24hr');
+      if (resp.ok) {
+        const list = await resp.json();
+        if (Array.isArray(list)) {
+          list.forEach(t => {
+            if (t.symbol && t.symbol.endsWith('USDT')) {
+              priceMap[t.symbol] = {
+                price: parseFloat(t.lastPrice) || 0,
+                change: parseFloat(t.priceChangePercent) || 0
+              };
+            }
+          });
         }
-      });
-      updateTerminalCard();
-      updateBtcSummary();
+      }
     } catch (_) {}
+
+    // 2. Backend scan for live funding rates (plus backup prices)
+    try {
+      const baseUrl = window.NEURAL_CONFIG?.API_BASE_URL || '';
+      const resp = await fetch(`${baseUrl}/api/market/binance-scan`);
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.ok && Array.isArray(data.pairs)) {
+          data.pairs.forEach(p => {
+            if (p.fundingRate !== undefined) fundingMap[p.binanceSymbol] = p.fundingRate;
+            if (!priceMap[p.binanceSymbol] && p.price > 0) {
+              priceMap[p.binanceSymbol] = { price: p.price, change: p.change };
+            }
+          });
+        }
+      }
+    } catch (_) {}
+
+    // 3. Apply real live prices to EVERY node immediately
+    const nodes = window.NeuralCanvasEngine ? window.NeuralCanvasEngine.getNodes() : [];
+    nodes.forEach(n => {
+      if (!n.asset) return;
+      const key = normalizeSymbolKey(n.asset);
+      if (priceMap[key] && priceMap[key].price > 0) {
+        n.asset.price = priceMap[key].price;
+        n.asset.change = priceMap[key].change;
+      }
+      if (fundingMap[key] !== undefined) {
+        n.asset.fundingRate = fundingMap[key];
+      }
+    });
+
+    updateTerminalCard();
+    updateBtcSummary();
   }
 
   async function syncNewsFromBackend() {
     try {
-      const resp = await fetch(`${window.NEURAL_CONFIG.API_BASE_URL}/api/market/news`);
+      const baseUrl = window.NEURAL_CONFIG?.API_BASE_URL || '';
+      const resp = await fetch(`${baseUrl}/api/market/news`);
       const data = await resp.json();
       const list = document.getElementById('live-news-radar-list');
       if (!list || !data.ok) return;
@@ -95,7 +137,7 @@
           : 'bg-rose-500/20 text-rose-300 border border-rose-400/40';
         return `
           <div onclick="window.__openChartModal(${n.index})" class="cursor-pointer p-2 rounded-lg bg-slate-950/90 border border-emerald-500/35 hover:border-cyan-400 flex items-center justify-between">
-            <div><span class="font-bold text-white">${n.asset.symbol}</span> <span class="text-[9px] text-cyan-300">@ ${window.formatPrice(prox.entryRef)}</span></div>
+            <div><span class="font-bold text-white">${n.asset.symbol}</span> <span class="text-[9px] text-cyan-300">@ ${window.formatPrice(n.asset.price)}</span></div>
             <div class="flex items-center gap-1">
               <span class="text-[8px] px-1 rounded bg-cyan-500/20 text-cyan-200 font-bold">Δ ${prox.distPct.toFixed(2)}%</span>
               <span class="text-[8px] px-1.5 py-0.5 rounded font-bold ${cls}">🎯 NEAR ${spec.shortLabel}</span>
@@ -144,48 +186,91 @@
     document.getElementById('term-signal-box').classList.toggle('hidden', !hasActiveSignal);
   }
 
-  // ---------------- NEAR-ENTRY SIGNAL GENERATOR (CONDITIONAL DYNAMIC R:R) ----------------
-  function generateNearEntrySignal() {
-    const nodes = window.NeuralCanvasEngine.getNodes().filter(n => n.asset);
-    let pool = nodes.filter(n => window.NeuralPnlManager.getNodeProximity(n).isNear && !recentSymbols.includes(n.asset.symbol));
-    if (!pool.length) {
-      pool = nodes.filter(n => !recentSymbols.includes(n.asset.symbol));
-      if (!pool.length) { recentSymbols = []; pool = nodes; }
-      pool[0].entryZoneAnchor = pool[0].asset.price;
+  // ---------------- REAL-TIME 15M MARKET STRUCTURE SIGNAL ENGINE ----------------
+  async function generateNearEntrySignal() {
+    if (window.NEURAL_ADMIN_SETTINGS?.signalsPaused) {
+      window.showToast('Signals are Paused by Admin', '⏸️');
+      return;
     }
-    pool.sort((a, b) => window.NeuralPnlManager.getNodeProximity(a).distPct - window.NeuralPnlManager.getNodeProximity(b).distPct);
+
+    const nodes = window.NeuralCanvasEngine.getNodes().filter(n => n.asset);
+    if (!nodes.length) return;
+
+    let pool = nodes.filter(n => !recentSymbols.includes(n.asset.symbol));
+    if (!pool.length) { recentSymbols = []; pool = nodes; }
     const chosen = pool[0];
     recentSymbols.push(chosen.asset.symbol);
     if (recentSymbols.length > 15) recentSymbols = recentSymbols.slice(-15);
 
-    const spec = getStealthSpec(chosen.asset.fundingRate);
-    const p = chosen.asset.price;
+    const binSym = normalizeSymbolKey(chosen.asset) || 'BTCUSDT';
+    let klines = [];
 
-    // Only boost R:R when strong confirmation is present (high funding pressure + aligned momentum)
-    const highConfirmation =
-      Math.abs(Number(chosen.asset.fundingRate || 0)) >= 0.0002 &&
-      ((spec.isLong && chosen.asset.change <= 1.5) || (!spec.isLong && chosen.asset.change >= -1.5));
+    try {
+      const resp = await fetch(`https://data-api.binance.vision/api/v3/klines?symbol=${encodeURIComponent(binSym)}&interval=15m&limit=40`);
+      if (resp.ok) {
+        const raw = await resp.json();
+        if (Array.isArray(raw) && raw.length >= 10) {
+          klines = raw.map(k => ({
+            open: parseFloat(k[1]),
+            high: parseFloat(k[2]),
+            low: parseFloat(k[3]),
+            close: parseFloat(k[4])
+          }));
+        }
+      }
+    } catch (_) {}
 
-    const slDist  = chosen.isCore ? 0.0040 : 0.0070;
-    const tp1Dist = highConfirmation
-      ? (chosen.isCore ? 0.0105 : 0.0185)   // Boosted TP1 (~1:2.6 R:R)
-      : (chosen.isCore ? 0.0065 : 0.0110);  // Standard TP1 (~1:1.6 R:R)
-    const tp2Dist = highConfirmation
-      ? (chosen.isCore ? 0.0168 : 0.0295)   // Boosted TP2 (~1:4.2 R:R)
-      : (chosen.isCore ? 0.0130 : 0.0220);  // Standard TP2 (~1:3.1 R:R)
+    if (!klines.length) {
+      window.showToast('Live candle data unavailable — try again', '⚠️');
+      return;
+    }
+
+    const livePrice = klines[klines.length - 1].close;
+    chosen.asset.price = livePrice;
+
+    const recent = klines.slice(-24);
+    const swingHigh = Math.max(...recent.map(k => k.high));
+    const swingLow  = Math.min(...recent.map(k => k.low));
+    const midRange  = (swingHigh + swingLow) / 2;
+
+    // Direction based on real Dealing Range (Discount < 50% = BUY, Premium > 50% = SELL) + Funding confluence
+    const inDiscount = livePrice < midRange;
+    const isLong = inDiscount;
+    const spec = isLong
+      ? { isLong: true, side: 'BUY / LONG', mode: 'green_buy' }
+      : { isLong: false, side: 'SELL / SHORT', mode: 'red_sell' };
+
+    const entryPrice = livePrice;
+    let slPrice, tp1Price, tp2Price;
+
+    if (isLong) {
+      slPrice = Math.min(swingLow * 0.999, livePrice * 0.994);
+      const risk = Math.max(livePrice * 0.0025, entryPrice - slPrice);
+      tp1Price = Math.max(midRange, entryPrice + risk * 1.8);
+      tp2Price = Math.max(swingHigh * 0.999, entryPrice + risk * 2.8);
+    } else {
+      slPrice = Math.max(swingHigh * 1.001, livePrice * 1.006);
+      const risk = Math.max(livePrice * 0.0025, slPrice - entryPrice);
+      tp1Price = Math.min(midRange, entryPrice - risk * 1.8);
+      tp2Price = Math.min(swingLow * 1.001, entryPrice - risk * 2.8);
+    }
+
+    const minConf = Number(window.NEURAL_ADMIN_SETTINGS?.minConfidence) || 75;
+    const distFromEq = Math.abs(livePrice - midRange) / (swingHigh - swingLow || 1);
+    const confidence = Math.max(minConf, Math.min(96, Math.round(78 + distFromEq * 30)));
 
     const sig = {
       symbol: chosen.asset.symbol,
-      isLong: spec.isLong,
+      isLong,
       direction: spec.side,
-      confidence: highConfirmation ? Math.floor(94 + Math.random() * 5) : Math.floor(88 + Math.random() * 5),
-      entryPrice: p,
-      tp1Price: spec.isLong ? p * (1 + tp1Dist) : p * (1 - tp1Dist),
-      tp2Price: spec.isLong ? p * (1 + tp2Dist) : p * (1 - tp2Dist),
-      slPrice:  spec.isLong ? p * (1 - slDist)  : p * (1 + slDist)
+      confidence,
+      entryPrice,
+      tp1Price,
+      tp2Price,
+      slPrice
     };
 
-    chosen.entryZoneAnchor = p;
+    chosen.entryZoneAnchor = entryPrice;
     chosen.lastSignal = sig;
     hasActiveSignal = true;
 
@@ -194,21 +279,19 @@
     window.NeuralCanvasEngine.setNeuralColorMode(spec.mode, sig);
     window.NeuralCanvasEngine.triggerBurst(chosen.x, chosen.y);
 
-    document.getElementById('sig-direction-badge').textContent = `${sig.direction} • ${sig.confidence}% AI`;
+    document.getElementById('sig-direction-badge').textContent = `${sig.direction} • ${sig.confidence}% LIVE`;
     document.getElementById('sig-entry').textContent = window.formatPrice(sig.entryPrice);
     document.getElementById('sig-tp1').textContent = window.formatPrice(sig.tp1Price);
     document.getElementById('sig-tp2').textContent = window.formatPrice(sig.tp2Price);
     document.getElementById('sig-sl').textContent = window.formatPrice(sig.slPrice);
-    document.getElementById('sig-reasoning').textContent = highConfirmation
-      ? `High-Confirmation Sniper Signal: ${sig.symbol} triggered at Entry Zone (${window.formatPrice(p)}) with Extended R:R target.`
-      : `Near-Entry Sniper Signal: ${sig.symbol} triggered right at Entry Zone (${window.formatPrice(p)}). Logged to Daily & Monthly P&L.`;
+    document.getElementById('sig-reasoning').textContent = `Real-Time 15m ${isLong ? 'Discount' : 'Premium'} Structure Signal on ${sig.symbol} @ ${window.formatPrice(entryPrice)} (Range: ${window.formatPrice(swingLow)} – ${window.formatPrice(swingHigh)}).`;
 
     updateTerminalCard();
-    window.NeuralPnlManager.logTrade({ ...sig, source: 'SCANNER', entryDistancePct: 0 });
-    window.showToast(`${sig.isLong ? '🟢 BUY' : '🔴 SELL'} Near-Entry Signal: ${sig.symbol}`, sig.isLong ? '🚀' : '🔻');
+    window.NeuralPnlManager.logTrade({ ...sig, source: 'REALTIME_15M', entryDistancePct: 0 });
+    window.showToast(`${isLong ? '🟢 BUY' : '🔴 SELL'} Live Signal: ${sig.symbol} @ ${window.formatPrice(entryPrice)}`, isLong ? '🚀' : '🔻');
   }
 
-  // ---------------- LIVE TRADINGVIEW CHART + LONG/SHORT POSITION MODAL ----------------
+  // ---------------- LIVE TRADINGVIEW CHART MODAL ----------------
   window.__openChartModal = async function (nodeIdx) {
     const nodes = window.NeuralCanvasEngine.getNodes();
     const node = nodes[nodeIdx] || nodes[0];
@@ -223,37 +306,26 @@
 
     document.getElementById('chart-modal-symbol').textContent = node.asset.symbol;
     document.getElementById('chart-modal-price').textContent = window.formatPrice(node.asset.price);
-    const rawSym = node.asset.binanceSymbol || 'BTCUSDT';
-    document.getElementById('chart-binance-link').href = `[https://www.binance.com/en/futures/$](https://www.binance.com/en/futures/$){rawSym}`;
-    document.getElementById('chart-tradingview-link').href = `[https://www.tradingview.com/chart/?symbol=BINANCE:$](https://www.tradingview.com/chart/?symbol=BINANCE:$){rawSym}.P`;
+    const rawSym = normalizeSymbolKey(node.asset) || 'BTCUSDT';
+    document.getElementById('chart-binance-link').href = `https://www.binance.com/en/futures/${rawSym}`;
+    document.getElementById('chart-tradingview-link').href = `https://www.tradingview.com/chart/?symbol=BINANCE:${rawSym}.P`;
 
-    const sig = node.lastSignal || (() => {
-      const spec = getStealthSpec(node.asset.fundingRate);
-      const p = Number(node.asset.price) || 100;
-      const tpDist = node.isCore ? 0.0085 : 0.0140;
-      const slDist = node.isCore ? 0.0040 : 0.0065;
-      return {
-        isLong: spec.isLong,
-        entryPrice: p,
-        tp1Price: spec.isLong ? p * (1 + tpDist) : p * (1 - tpDist),
-        slPrice:  spec.isLong ? p * (1 - slDist) : p * (1 + slDist)
-      };
-    })();
-
+    const sig = node.lastSignal || {};
     const canvasEl = document.getElementById('klines-chart-canvas');
     if (window.TVPositionChart && canvasEl) {
       await window.TVPositionChart.renderIntoModal(canvasEl, {
         symbol: node.asset.symbol,
+        nodeRef: node,
         timeframe: '15m',
         entry: sig.entryPrice,
         tp: sig.tp1Price,
         sl: sig.slPrice,
-        isLong: sig.isLong
+        isLong: sig.isLong !== undefined ? sig.isLong : getStealthSpec(node.asset.fundingRate).isLong
       });
     }
   };
 
-  // ---------------- RR CALCULATOR INTEGRATION (CRYPTO + FOREX + STOCKS) ----------------
+  // ---------------- RR CALCULATOR ----------------
   function calculateRR() {
     const cap = parseFloat(document.getElementById('rr-capital').value) || 0;
     const riskPct = parseFloat(document.getElementById('rr-risk-pct').value) || 0;
@@ -294,7 +366,7 @@
     calculateRR();
   };
 
-  // ---------------- AUTH & ADMIN PANEL (BACKEND API + OFFLINE FALLBACK) ----------------
+  // ---------------- AUTH & ADMIN PANEL ----------------
   function initAuth() {
     const form = document.getElementById('user-auth-form');
     const tabLogin = document.getElementById('tab-login-mode-btn');
@@ -325,8 +397,9 @@
       const password = document.getElementById('user-password-input').value.trim();
 
       try {
+        const baseUrl = window.NEURAL_CONFIG?.API_BASE_URL || '';
         const endpoint = isSignUpMode ? '/api/auth/signup' : '/api/auth/login';
-        const resp = await fetch(`${window.NEURAL_CONFIG.API_BASE_URL}${endpoint}`, {
+        const resp = await fetch(`${baseUrl}${endpoint}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name, identifier, password })
@@ -351,9 +424,9 @@
       } catch (_) {
         if (!isSignUpMode && identifier.toLowerCase() === 'kavishkasithumina' && password.toLowerCase() === 'kavishka@1234') {
           unlockApp({ name: 'kavishkasithumina', email: 'kavishkasithumina' }, true);
-          window.showToast('Offline Mode — Start backend server for AI Chart Vision!', '⚠️');
+          window.showToast('Offline Mode — Live Binance Prices Active!', '⚠️');
         } else {
-          errEl.textContent = 'Cannot reach Backend Server. Run "npm start" inside /backend folder.';
+          errEl.textContent = 'Cannot reach Backend Server.';
           errEl.classList.remove('hidden');
         }
       }
@@ -379,12 +452,14 @@
     setTimeout(() => gate.classList.add('hidden'), 400);
 
     if (adminFlag) loadAdminUsers();
-    window.showToast(`Welcome ${user.name} — Neural Trading AI Unlocked!`, '⚡');
+    syncLivePrices();
+    window.showToast(`Welcome ${user.name} — Live Market Synced!`, '⚡');
   }
 
   async function loadAdminUsers() {
     try {
-      const resp = await fetch(`${window.NEURAL_CONFIG.API_BASE_URL}/api/auth/admin/users`);
+      const baseUrl = window.NEURAL_CONFIG?.API_BASE_URL || '';
+      const resp = await fetch(`${baseUrl}/api/auth/admin/users`);
       const data = await resp.json();
       if (!data.ok) return;
       const list = document.getElementById('admin-users-list');
@@ -408,13 +483,15 @@
   }
 
   window.__adminSetStatus = async (idx, status) => {
-    await fetch(`${window.NEURAL_CONFIG.API_BASE_URL}/api/auth/admin/users/${idx}/status`, {
+    const baseUrl = window.NEURAL_CONFIG?.API_BASE_URL || '';
+    await fetch(`${baseUrl}/api/auth/admin/users/${idx}/status`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status })
     });
     loadAdminUsers();
   };
   window.__adminDelUser = async (idx) => {
-    await fetch(`${window.NEURAL_CONFIG.API_BASE_URL}/api/auth/admin/users/${idx}`, { method: 'DELETE' });
+    const baseUrl = window.NEURAL_CONFIG?.API_BASE_URL || '';
+    await fetch(`${baseUrl}/api/auth/admin/users/${idx}`, { method: 'DELETE' });
     loadAdminUsers();
   };
 
@@ -426,7 +503,6 @@
     window.NeuralPnlManager.wireControls();
     window.NeuralPnlManager.load();
 
-    // Make EVERY Floating Tab Movable (Draggable) + Liquid Glass + Minimizable
     window.NeuralTabManager.makeDraggable(document.getElementById('hud-wrapper-tab'), {
       resetBtnSelector: '.tab-reset-pos-btn', minimizeBtnSelector: '.tab-minimize-btn', bodySelector: '#hud-tab-body',
       defaultTop: '16px', defaultLeft: '16px'
@@ -451,12 +527,12 @@
       defaultTop: '16px', defaultLeft: '50%', defaultTransform: 'translateX(-50%)'
     });
 
-    // Wire Global Buttons
     document.getElementById('quick-fire-signal-btn').addEventListener('click', generateNearEntrySignal);
     document.getElementById('term-generate-signal-btn').addEventListener('click', generateNearEntrySignal);
     document.getElementById('term-open-chart-btn').addEventListener('click', () => window.__openChartModal(window.NeuralCanvasEngine.getSelectedIndex()));
     document.getElementById('term-copy-symbol-btn').addEventListener('click', () => window.copyCoinSymbolToClipboard(document.getElementById('term-symbol').textContent));
     document.getElementById('close-chart-modal-btn').addEventListener('click', () => {
+      if (window.TVPositionChart) window.TVPositionChart.close();
       document.getElementById('coin-chart-modal').classList.add('hidden');
       document.getElementById('coin-chart-modal').classList.remove('flex');
     });
@@ -473,14 +549,12 @@
       if (el) el.addEventListener('input', calculateRR);
     });
 
-    // Quick toggle for TV Chart Vision Tab
     document.getElementById('quick-open-vision-btn').addEventListener('click', () => {
       const body = document.getElementById('vision-widget-body');
       if (body) body.classList.remove('hidden');
       window.showToast('TradingView Chart AI Vision Ready — Upload or Ctrl+V!', '📷');
     });
 
-    // Admin Drawer
     const adminPanel = document.getElementById('admin-panel');
     document.getElementById('admin-access-btn').addEventListener('click', () => {
       adminPanel.classList.remove('hidden');
@@ -493,7 +567,8 @@
       const email = document.getElementById('admin-new-user-email').value.trim();
       const password = document.getElementById('admin-new-user-pass').value.trim();
       if (!email || !password) return;
-      await fetch(`${window.NEURAL_CONFIG.API_BASE_URL}/api/auth/admin/users`, {
+      const baseUrl = window.NEURAL_CONFIG?.API_BASE_URL || '';
+      await fetch(`${baseUrl}/api/auth/admin/users`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password })
       });
       document.getElementById('admin-new-user-email').value = '';
@@ -502,9 +577,9 @@
       window.showToast(`Approved user: ${email}`, '✅');
     });
 
-    syncBinanceFromBackend();
+    syncLivePrices();
     syncNewsFromBackend();
-    setInterval(syncBinanceFromBackend, 15000);
+    setInterval(syncLivePrices, 5000);
     setInterval(syncNewsFromBackend, 45000);
     setInterval(() => {
       window.NeuralPnlManager.checkMidnightReset();
