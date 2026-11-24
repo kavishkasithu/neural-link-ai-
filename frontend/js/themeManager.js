@@ -1,6 +1,6 @@
 /**
  * ADMIN-ONLY THEME STUDIO (10 THEMES + CRYPTO BUBBLES PHYSICS ENGINE)
- * Visible strictly to Admin (inside #admin-panel AND via Admin-only floating 🎨 THEMES button).
+ * Guaranteed Admin visibility + high-specificity theme styling across UI & widgets.
  */
 window.NeuralThemeManager = (function () {
   const STORAGE_KEY = 'neural_ai_active_theme';
@@ -16,6 +16,7 @@ window.NeuralThemeManager = (function () {
       id: 'neural_default',
       name: '🧠 Neural Cortex',
       desc: 'Default Organic Network',
+      badge: '#22d3ee',
       isBubbles: false,
       css: ''
     },
@@ -23,23 +24,32 @@ window.NeuralThemeManager = (function () {
       id: 'crypto_bubbles',
       name: '🫧 Crypto Bubbles',
       desc: 'Live Floating Physics Bubbles',
+      badge: '#34d399',
       isBubbles: true,
       css: `
-        body[data-neural-theme="crypto_bubbles"] { background: radial-gradient(circle at 50% 35%, #071320 0%, #02060c 100%) !important; }
+        body[data-neural-theme="crypto_bubbles"] {
+          background: radial-gradient(circle at 50% 35%, #07192b 0%, #02060c 100%) !important;
+        }
       `
     },
     {
       id: 'cyberpunk_neon',
       name: '⚡ Cyberpunk Neon',
       desc: 'Magenta & Cyan Neon Glass',
+      badge: '#f472b6',
       isBubbles: false,
       css: `
-        body[data-neural-theme="cyberpunk_neon"] { background: radial-gradient(circle at 20% 20%, #240538 0%, #06020f 70%) !important; }
-        body[data-neural-theme="cyberpunk_neon"] [id$="-widget"],
-        body[data-neural-theme="cyberpunk_neon"] #asset-terminal-card,
-        body[data-neural-theme="cyberpunk_neon"] #hud-wrapper-tab {
-          border-color: rgba(236, 72, 153, 0.6) !important;
-          box-shadow: 0 0 24px rgba(236, 72, 153, 0.25), inset 0 0 14px rgba(34, 211, 238, 0.14) !important;
+        body[data-neural-theme="cyberpunk_neon"] {
+          background: radial-gradient(circle at 20% 20%, #2e0647 0%, #070212 72%) !important;
+        }
+        body[data-neural-theme="cyberpunk_neon"] #protected-website-ui [id$="-widget"],
+        body[data-neural-theme="cyberpunk_neon"] #protected-website-ui #asset-terminal-card,
+        body[data-neural-theme="cyberpunk_neon"] #protected-website-ui #hud-wrapper-tab,
+        body[data-neural-theme="cyberpunk_neon"] #coin-chart-modal > div,
+        body[data-neural-theme="cyberpunk_neon"] #rr-calculator-modal > div {
+          background: rgba(20, 6, 36, 0.84) !important;
+          border-color: rgba(236, 72, 153, 0.75) !important;
+          box-shadow: 0 0 26px rgba(236, 72, 153, 0.32), inset 0 0 14px rgba(34, 211, 238, 0.16) !important;
         }
       `
     },
@@ -47,14 +57,20 @@ window.NeuralThemeManager = (function () {
       id: 'obsidian_gold',
       name: '👑 Obsidian Gold',
       desc: 'Institutional Black & Gold',
+      badge: '#fbbf24',
       isBubbles: false,
       css: `
-        body[data-neural-theme="obsidian_gold"] { background: radial-gradient(circle at 50% 20%, #211805 0%, #050402 75%) !important; }
-        body[data-neural-theme="obsidian_gold"] [id$="-widget"],
-        body[data-neural-theme="obsidian_gold"] #asset-terminal-card,
-        body[data-neural-theme="obsidian_gold"] #hud-wrapper-tab {
-          border-color: rgba(245, 158, 11, 0.6) !important;
-          box-shadow: 0 0 26px rgba(245, 158, 11, 0.22), inset 0 0 12px rgba(251, 191, 36, 0.1) !important;
+        body[data-neural-theme="obsidian_gold"] {
+          background: radial-gradient(circle at 50% 20%, #2b1e05 0%, #060401 75%) !important;
+        }
+        body[data-neural-theme="obsidian_gold"] #protected-website-ui [id$="-widget"],
+        body[data-neural-theme="obsidian_gold"] #protected-website-ui #asset-terminal-card,
+        body[data-neural-theme="obsidian_gold"] #protected-website-ui #hud-wrapper-tab,
+        body[data-neural-theme="obsidian_gold"] #coin-chart-modal > div,
+        body[data-neural-theme="obsidian_gold"] #rr-calculator-modal > div {
+          background: rgba(24, 17, 4, 0.86) !important;
+          border-color: rgba(245, 158, 11, 0.75) !important;
+          box-shadow: 0 0 26px rgba(245, 158, 11, 0.28), inset 0 0 12px rgba(251, 191, 36, 0.12) !important;
         }
       `
     },
@@ -62,14 +78,20 @@ window.NeuralThemeManager = (function () {
       id: 'matrix_terminal',
       name: '💚 Matrix Terminal',
       desc: 'Emerald Quant Terminal',
+      badge: '#10b981',
       isBubbles: false,
       css: `
-        body[data-neural-theme="matrix_terminal"] { background: radial-gradient(circle at 50% 50%, #022110 0%, #010804 80%) !important; }
-        body[data-neural-theme="matrix_terminal"] [id$="-widget"],
-        body[data-neural-theme="matrix_terminal"] #asset-terminal-card,
-        body[data-neural-theme="matrix_terminal"] #hud-wrapper-tab {
-          border-color: rgba(16, 185, 129, 0.6) !important;
-          box-shadow: 0 0 24px rgba(16, 185, 129, 0.24) !important;
+        body[data-neural-theme="matrix_terminal"] {
+          background: radial-gradient(circle at 50% 50%, #032b15 0%, #010905 80%) !important;
+        }
+        body[data-neural-theme="matrix_terminal"] #protected-website-ui [id$="-widget"],
+        body[data-neural-theme="matrix_terminal"] #protected-website-ui #asset-terminal-card,
+        body[data-neural-theme="matrix_terminal"] #protected-website-ui #hud-wrapper-tab,
+        body[data-neural-theme="matrix_terminal"] #coin-chart-modal > div,
+        body[data-neural-theme="matrix_terminal"] #rr-calculator-modal > div {
+          background: rgba(3, 24, 12, 0.86) !important;
+          border-color: rgba(16, 185, 129, 0.75) !important;
+          box-shadow: 0 0 24px rgba(16, 185, 129, 0.28) !important;
         }
       `
     },
@@ -77,14 +99,20 @@ window.NeuralThemeManager = (function () {
       id: 'liquid_aurora',
       name: '🌌 Liquid Aurora',
       desc: 'Violet & Teal Northern Glow',
+      badge: '#a78bfa',
       isBubbles: false,
       css: `
-        body[data-neural-theme="liquid_aurora"] { background: linear-gradient(135deg, #071b2e 0%, #1a0a33 50%, #042420 100%) !important; }
-        body[data-neural-theme="liquid_aurora"] [id$="-widget"],
-        body[data-neural-theme="liquid_aurora"] #asset-terminal-card,
-        body[data-neural-theme="liquid_aurora"] #hud-wrapper-tab {
-          border-color: rgba(139, 92, 246, 0.6) !important;
-          box-shadow: 0 0 28px rgba(45, 212, 191, 0.22), inset 0 0 14px rgba(139, 92, 246, 0.15) !important;
+        body[data-neural-theme="liquid_aurora"] {
+          background: linear-gradient(135deg, #09223b 0%, #220c42 52%, #052e29 100%) !important;
+        }
+        body[data-neural-theme="liquid_aurora"] #protected-website-ui [id$="-widget"],
+        body[data-neural-theme="liquid_aurora"] #protected-website-ui #asset-terminal-card,
+        body[data-neural-theme="liquid_aurora"] #protected-website-ui #hud-wrapper-tab,
+        body[data-neural-theme="liquid_aurora"] #coin-chart-modal > div,
+        body[data-neural-theme="liquid_aurora"] #rr-calculator-modal > div {
+          background: rgba(12, 14, 36, 0.84) !important;
+          border-color: rgba(139, 92, 246, 0.72) !important;
+          box-shadow: 0 0 28px rgba(45, 212, 191, 0.24), inset 0 0 14px rgba(139, 92, 246, 0.16) !important;
         }
       `
     },
@@ -92,14 +120,20 @@ window.NeuralThemeManager = (function () {
       id: 'crimson_inferno',
       name: '🌋 Crimson Inferno',
       desc: 'Blood Red & Lava Dark',
+      badge: '#fb7185',
       isBubbles: false,
       css: `
-        body[data-neural-theme="crimson_inferno"] { background: radial-gradient(circle at 50% 30%, #2b060d 0%, #080203 78%) !important; }
-        body[data-neural-theme="crimson_inferno"] [id$="-widget"],
-        body[data-neural-theme="crimson_inferno"] #asset-terminal-card,
-        body[data-neural-theme="crimson_inferno"] #hud-wrapper-tab {
-          border-color: rgba(244, 63, 94, 0.65) !important;
-          box-shadow: 0 0 26px rgba(244, 63, 94, 0.25), inset 0 0 12px rgba(251, 146, 60, 0.12) !important;
+        body[data-neural-theme="crimson_inferno"] {
+          background: radial-gradient(circle at 50% 30%, #3b0711 0%, #090204 78%) !important;
+        }
+        body[data-neural-theme="crimson_inferno"] #protected-website-ui [id$="-widget"],
+        body[data-neural-theme="crimson_inferno"] #protected-website-ui #asset-terminal-card,
+        body[data-neural-theme="crimson_inferno"] #protected-website-ui #hud-wrapper-tab,
+        body[data-neural-theme="crimson_inferno"] #coin-chart-modal > div,
+        body[data-neural-theme="crimson_inferno"] #rr-calculator-modal > div {
+          background: rgba(28, 5, 10, 0.86) !important;
+          border-color: rgba(244, 63, 94, 0.78) !important;
+          box-shadow: 0 0 26px rgba(244, 63, 94, 0.30), inset 0 0 12px rgba(251, 146, 60, 0.14) !important;
         }
       `
     },
@@ -107,14 +141,20 @@ window.NeuralThemeManager = (function () {
       id: 'arctic_frost',
       name: '❄️ Arctic Frost',
       desc: 'Icy Glacier Liquid Glass',
+      badge: '#7dd3fc',
       isBubbles: false,
       css: `
-        body[data-neural-theme="arctic_frost"] { background: radial-gradient(circle at 50% 20%, #0a2538 0%, #030b14 80%) !important; }
-        body[data-neural-theme="arctic_frost"] [id$="-widget"],
-        body[data-neural-theme="arctic_frost"] #asset-terminal-card,
-        body[data-neural-theme="arctic_frost"] #hud-wrapper-tab {
-          border-color: rgba(125, 211, 252, 0.65) !important;
-          box-shadow: 0 0 26px rgba(56, 189, 248, 0.25), inset 0 0 16px rgba(224, 242, 254, 0.12) !important;
+        body[data-neural-theme="arctic_frost"] {
+          background: radial-gradient(circle at 50% 20%, #0d324d 0%, #040e1a 80%) !important;
+        }
+        body[data-neural-theme="arctic_frost"] #protected-website-ui [id$="-widget"],
+        body[data-neural-theme="arctic_frost"] #protected-website-ui #asset-terminal-card,
+        body[data-neural-theme="arctic_frost"] #protected-website-ui #hud-wrapper-tab,
+        body[data-neural-theme="arctic_frost"] #coin-chart-modal > div,
+        body[data-neural-theme="arctic_frost"] #rr-calculator-modal > div {
+          background: rgba(7, 24, 42, 0.84) !important;
+          border-color: rgba(125, 211, 252, 0.78) !important;
+          box-shadow: 0 0 26px rgba(56, 189, 248, 0.28), inset 0 0 16px rgba(224, 242, 254, 0.14) !important;
         }
       `
     },
@@ -122,14 +162,20 @@ window.NeuralThemeManager = (function () {
       id: 'synthwave_80s',
       name: '🌆 Synthwave 80s',
       desc: 'Retro Sunset Purple & Orange',
+      badge: '#fb923c',
       isBubbles: false,
       css: `
-        body[data-neural-theme="synthwave_80s"] { background: linear-gradient(160deg, #1b0736 0%, #2d0b38 55%, #2b1008 100%) !important; }
-        body[data-neural-theme="synthwave_80s"] [id$="-widget"],
-        body[data-neural-theme="synthwave_80s"] #asset-terminal-card,
-        body[data-neural-theme="synthwave_80s"] #hud-wrapper-tab {
-          border-color: rgba(251, 146, 60, 0.6) !important;
-          box-shadow: 0 0 24px rgba(192, 38, 211, 0.25), inset 0 0 14px rgba(251, 146, 60, 0.12) !important;
+        body[data-neural-theme="synthwave_80s"] {
+          background: linear-gradient(160deg, #240947 0%, #3d0e4c 52%, #3b150a 100%) !important;
+        }
+        body[data-neural-theme="synthwave_80s"] #protected-website-ui [id$="-widget"],
+        body[data-neural-theme="synthwave_80s"] #protected-website-ui #asset-terminal-card,
+        body[data-neural-theme="synthwave_80s"] #protected-website-ui #hud-wrapper-tab,
+        body[data-neural-theme="synthwave_80s"] #coin-chart-modal > div,
+        body[data-neural-theme="synthwave_80s"] #rr-calculator-modal > div {
+          background: rgba(26, 8, 38, 0.86) !important;
+          border-color: rgba(251, 146, 60, 0.72) !important;
+          box-shadow: 0 0 26px rgba(192, 38, 211, 0.28), inset 0 0 14px rgba(251, 146, 60, 0.14) !important;
         }
       `
     },
@@ -137,30 +183,37 @@ window.NeuralThemeManager = (function () {
       id: 'diamond_rgb',
       name: '💎 Diamond RGB',
       desc: 'Animated RGB Liquid Glow',
+      badge: '#e879f9',
       isBubbles: false,
       css: `
         @keyframes neuralRgbBorder {
-          0%   { border-color: rgba(34, 211, 238, 0.75); box-shadow: 0 0 22px rgba(34, 211, 238, 0.28); }
-          33%  { border-color: rgba(168, 85, 247, 0.75); box-shadow: 0 0 22px rgba(168, 85, 247, 0.28); }
-          66%  { border-color: rgba(16, 185, 129, 0.75); box-shadow: 0 0 22px rgba(16, 185, 129, 0.28); }
-          100% { border-color: rgba(34, 211, 238, 0.75); box-shadow: 0 0 22px rgba(34, 211, 238, 0.28); }
+          0%   { border-color: rgba(34, 211, 238, 0.88); box-shadow: 0 0 24px rgba(34, 211, 238, 0.34); }
+          33%  { border-color: rgba(192, 132, 252, 0.88); box-shadow: 0 0 24px rgba(192, 132, 252, 0.34); }
+          66%  { border-color: rgba(52, 211, 153, 0.88); box-shadow: 0 0 24px rgba(52, 211, 153, 0.34); }
+          100% { border-color: rgba(34, 211, 238, 0.88); box-shadow: 0 0 24px rgba(34, 211, 238, 0.34); }
         }
-        body[data-neural-theme="diamond_rgb"] { background: radial-gradient(circle at 50% 40%, #0d1326 0%, #03050a 80%) !important; }
-        body[data-neural-theme="diamond_rgb"] [id$="-widget"],
-        body[data-neural-theme="diamond_rgb"] #asset-terminal-card,
-        body[data-neural-theme="diamond_rgb"] #hud-wrapper-tab {
-          animation: neuralRgbBorder 5s linear infinite !important;
+        body[data-neural-theme="diamond_rgb"] {
+          background: radial-gradient(circle at 50% 40%, #121b36 0%, #03050a 80%) !important;
+        }
+        body[data-neural-theme="diamond_rgb"] #protected-website-ui [id$="-widget"],
+        body[data-neural-theme="diamond_rgb"] #protected-website-ui #asset-terminal-card,
+        body[data-neural-theme="diamond_rgb"] #protected-website-ui #hud-wrapper-tab,
+        body[data-neural-theme="diamond_rgb"] #coin-chart-modal > div,
+        body[data-neural-theme="diamond_rgb"] #rr-calculator-modal > div {
+          animation: neuralRgbBorder 4.5s linear infinite !important;
         }
       `
     }
   ];
 
   function injectThemeStyles() {
-    if (document.getElementById('neural-dynamic-themes-css')) return;
-    const style = document.createElement('style');
-    style.id = 'neural-dynamic-themes-css';
+    let style = document.getElementById('neural-dynamic-themes-css');
+    if (!style) {
+      style = document.createElement('style');
+      style.id = 'neural-dynamic-themes-css';
+      document.head.appendChild(style);
+    }
     style.textContent = THEMES.map(t => t.css).join('\n');
-    document.head.appendChild(style);
   }
 
   // ---------------- CRYPTO BUBBLES PHYSICS ENGINE ----------------
@@ -172,8 +225,8 @@ window.NeuralThemeManager = (function () {
       return {
         nodeIdx: n.index,
         asset: n.asset,
-        x: 100 + Math.random() * Math.max(200, w - 200),
-        y: 100 + Math.random() * Math.max(200, h - 200),
+        x: 110 + Math.random() * Math.max(220, w - 220),
+        y: 110 + Math.random() * Math.max(220, h - 220),
         vx: (Math.random() - 0.5) * 0.9,
         vy: (Math.random() - 0.5) * 0.9,
         r,
@@ -338,21 +391,28 @@ window.NeuralThemeManager = (function () {
 
     document.querySelectorAll('.admin-theme-btn').forEach(btn => {
       const active = btn.dataset.themeId === activeTheme;
-      btn.style.borderColor = active ? '#22d3ee' : 'rgba(56, 189, 248, 0.25)';
-      btn.style.background = active ? 'rgba(34, 211, 238, 0.22)' : 'rgba(15, 23, 42, 0.88)';
+      btn.style.borderColor = active ? found.badge : 'rgba(148, 163, 184, 0.25)';
+      btn.style.background = active ? 'rgba(30, 41, 59, 0.96)' : 'rgba(15, 23, 42, 0.82)';
+      btn.style.boxShadow = active ? `0 0 12px ${found.badge}44` : 'none';
     });
 
+    const activeLabel = document.getElementById('admin-active-theme-label');
+    if (activeLabel) activeLabel.textContent = found.name;
+
     if (!silent && window.showToast) {
-      window.showToast(`Theme Switched: ${found.name}`, '🎨');
+      window.showToast(`Theme Applied: ${found.name}`, '🎨');
     }
   }
 
   function buildThemeGridHtml() {
     return THEMES.map(t => `
       <button type="button" data-theme-id="${t.id}" class="admin-theme-btn"
-        style="text-align:left; padding:8px; border-radius:8px; border:1px solid rgba(56,189,248,0.25); background:rgba(15,23,42,0.88); cursor:pointer; transition:all 0.15s ease;">
-        <div style="font-size:11px; font-weight:700; color:#ffffff;">${t.name}</div>
-        <div style="font-size:9px; color:rgba(186,230,253,0.75); margin-top:2px;">${t.desc}</div>
+        style="text-align:left; padding:8px; border-radius:8px; border:1px solid rgba(148,163,184,0.25); background:rgba(15,23,42,0.82); cursor:pointer; transition:all 0.15s ease;">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:4px;">
+          <span style="font-size:10px; font-weight:800; color:#ffffff;">${t.name}</span>
+          <span style="width:8px; height:8px; border-radius:999px; background:${t.badge}; display:inline-block;"></span>
+        </div>
+        <div style="font-size:8px; color:rgba(203,213,225,0.75); margin-top:2px;">${t.desc}</div>
       </button>
     `).join('');
   }
@@ -363,22 +423,28 @@ window.NeuralThemeManager = (function () {
     });
   }
 
-  // ---------------- ADMIN-ONLY FLOATING BUTTON + POPUP MODAL ----------------
+  // ---------------- ADMIN-ONLY FLOATING STUDIO BUTTON + PANEL ----------------
+  function isAdminSessionActive() {
+    const adminBtn = document.getElementById('admin-access-btn');
+    const sessionTxt = (document.getElementById('user-session-email')?.textContent || '').toUpperCase();
+    return Boolean((adminBtn && !adminBtn.classList.contains('hidden')) || sessionTxt.includes('ADMIN'));
+  }
+
   function createAdminFloatingStudio() {
     if (document.getElementById('admin-floating-theme-btn')) return;
 
     const btn = document.createElement('button');
     btn.id = 'admin-floating-theme-btn';
     btn.type = 'button';
-    btn.textContent = '🎨 THEMES';
+    btn.innerHTML = `<span>🎨</span><span>THEMES (10)</span>`;
     btn.style.cssText = [
       'position:fixed', 'bottom:18px', 'right:18px', 'z-index:9990',
       'display:none', 'align-items:center', 'gap:6px',
       'padding:9px 14px', 'border-radius:999px',
-      'background:rgba(8,18,32,0.92)', 'backdrop-filter:blur(12px)',
-      'border:1px solid rgba(34,211,238,0.65)', 'color:#67e8f9',
+      'background:rgba(8,18,32,0.94)', 'backdrop-filter:blur(12px)',
+      'border:1px solid rgba(34,211,238,0.7)', 'color:#67e8f9',
       'font-family:"JetBrains Mono",monospace', 'font-size:11px', 'font-weight:800',
-      'box-shadow:0 0 20px rgba(34,211,238,0.35)', 'cursor:pointer'
+      'box-shadow:0 0 22px rgba(34,211,238,0.35)', 'cursor:pointer'
     ].join(';');
     document.body.appendChild(btn);
 
@@ -386,19 +452,23 @@ window.NeuralThemeManager = (function () {
     modal.id = 'admin-theme-studio-modal';
     modal.style.cssText = [
       'position:fixed', 'bottom:64px', 'right:18px', 'z-index:9995',
-      'width:320px', 'max-height:75vh', 'overflow-y:auto',
+      'width:330px', 'max-height:76vh', 'overflow-y:auto',
       'display:none', 'padding:14px', 'border-radius:14px',
-      'background:rgba(5,12,24,0.96)', 'backdrop-filter:blur(16px)',
-      'border:1px solid rgba(34,211,238,0.55)',
-      'box-shadow:0 12px 40px rgba(0,0,0,0.75)'
+      'background:rgba(5,12,24,0.97)', 'backdrop-filter:blur(16px)',
+      'border:1px solid rgba(34,211,238,0.6)',
+      'box-shadow:0 12px 40px rgba(0,0,0,0.8)',
+      'font-family:"JetBrains Mono",monospace'
     ].join(';');
 
     modal.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-        <span style="font-size:11px; font-weight:800; color:#67e8f9; letter-spacing:0.06em;">🎨 ADMIN THEME STUDIO (10)</span>
-        <button type="button" id="close-theme-studio-btn" style="background:none; border:none; color:#fb7185; font-weight:800; cursor:pointer; font-size:14px;">✕</button>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+        <div>
+          <div style="font-size:11px; font-weight:800; color:#67e8f9;">🎨 ADMIN THEME STUDIO (10)</div>
+          <div style="font-size:9px; color:#94a3b8;">Active: <span id="admin-active-theme-label" style="color:#34d399; font-weight:700;">-</span></div>
+        </div>
+        <button type="button" id="close-theme-studio-btn" style="background:rgba(244,63,94,0.15); border:1px solid rgba(244,63,94,0.4); border-radius:6px; color:#fda4af; font-weight:800; cursor:pointer; padding:2px 8px; font-size:12px;">✕</button>
       </div>
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:7px;">
         ${buildThemeGridHtml()}
       </div>
     `;
@@ -413,25 +483,22 @@ window.NeuralThemeManager = (function () {
       modal.style.display = 'none';
     });
 
-    // Show ONLY when Admin is logged in (#admin-access-btn is visible)
     const syncAdminVisibility = () => {
-      const adminBtn = document.getElementById('admin-access-btn');
-      const isAdminVisible = adminBtn && !adminBtn.classList.contains('hidden');
-      btn.style.display = isAdminVisible ? 'flex' : 'none';
-      if (!isAdminVisible) modal.style.display = 'none';
+      const allowed = isAdminSessionActive();
+      btn.style.display = allowed ? 'flex' : 'none';
+      if (!allowed) modal.style.display = 'none';
     };
-    setInterval(syncAdminVisibility, 1000);
+    setInterval(syncAdminVisibility, 600);
     syncAdminVisibility();
   }
 
-  // ---------------- ALSO INJECT INSIDE ADMIN PANEL ----------------
   function injectInsideAdminPanel() {
     const adminPanel = document.getElementById('admin-panel');
     if (!adminPanel || document.getElementById('admin-theme-switcher-box')) return;
 
     const box = document.createElement('div');
     box.id = 'admin-theme-switcher-box';
-    box.style.cssText = 'padding:10px; border-radius:12px; background:rgba(2,6,23,0.92); border:1px solid rgba(34,211,238,0.4); margin-bottom:10px;';
+    box.style.cssText = 'padding:10px; border-radius:12px; background:rgba(2,6,23,0.94); border:1px solid rgba(34,211,238,0.45); margin-bottom:10px; font-family:"JetBrains Mono",monospace;';
     box.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
         <span style="font-size:10px; font-weight:800; color:#67e8f9;">🎨 ADMIN THEMES (10)</span>
