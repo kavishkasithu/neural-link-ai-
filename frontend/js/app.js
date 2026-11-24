@@ -1,5 +1,7 @@
 /**
- * MAIN FRONTEND APPLICATION CONTROLLER (TRUE REAL-TIME PRICES & SIGNALS)
+ * MAIN FRONTEND APPLICATION CONTROLLER
+ * Includes: True Real-Time Binance Vision Prices, 15m Structure Signals,
+ * Built-in Admin Command Center (Themes + Signals + System), and Crypto Bubbles Engine.
  */
 (function () {
   let currentUser = null;
@@ -7,6 +9,48 @@
   let isSignUpMode = false;
   let hasActiveSignal = false;
   let recentSymbols = [];
+  let autoSignalTimer = null;
+
+  const THEME_STORAGE_KEY = 'neural_ai_active_theme';
+  const SETTINGS_STORAGE_KEY = 'neural_admin_global_settings';
+
+  const DEFAULT_ADMIN_SETTINGS = {
+    announcement: '',
+    announcementType: 'gold', // gold | red | green | cyan
+    minConfidence: 75,
+    rrMode: 'balanced',       // conservative | balanced | sniper
+    directionFilter: 'both',  // both | long_only | short_only
+    signalsPaused: false,
+    autoSignalSec: 0,         // 0 = off, 60, 180, 300
+    defaultLeverage: 10,
+    glassOpacity: 86,
+    showFloatingThemeBtn: true
+  };
+
+  function loadAdminSettings() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) || '{}');
+      return { ...DEFAULT_ADMIN_SETTINGS, ...saved };
+    } catch (_) {
+      return { ...DEFAULT_ADMIN_SETTINGS };
+    }
+  }
+
+  function saveAdminSettings(patch) {
+    const merged = { ...loadAdminSettings(), ...patch };
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(merged));
+    window.NEURAL_ADMIN_SETTINGS = merged;
+    applyAdminVisualSettings(merged);
+    setupAutoSignalTimer(merged.autoSignalSec);
+    return merged;
+  }
+
+  window.NEURAL_ADMIN_SETTINGS = loadAdminSettings();
+
+  const on = (id, ev, fn) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener(ev, fn);
+  };
 
   window.formatPrice = function (val) {
     if (val === undefined || val === null || isNaN(val)) return '$0.00';
@@ -20,8 +64,10 @@
   window.showToast = function (msg, icon = '⚡') {
     const toast = document.getElementById('neural-toast');
     if (!toast) return;
-    document.getElementById('toast-text').textContent = msg;
-    document.getElementById('toast-icon').textContent = icon;
+    const textEl = document.getElementById('toast-text');
+    const iconEl = document.getElementById('toast-icon');
+    if (textEl) textEl.textContent = msg;
+    if (iconEl) iconEl.textContent = icon;
     toast.classList.remove('opacity-0', 'translate-y-2');
     toast.classList.add('opacity-100', 'translate-y-0');
     clearTimeout(window.__toastTimer);
@@ -57,12 +103,701 @@
     return clean.endsWith('USDT') ? clean : `${clean.replace(/USD$/, '')}USDT`;
   }
 
+  // =========================================================================
+  // BUILT-IN 10 THEMES + CRYPTO BUBBLES PHYSICS ENGINE (ADMIN ONLY CONTROL)
+  // =========================================================================
+  let activeTheme = localStorage.getItem(THEME_STORAGE_KEY) || 'neural_default';
+  let bubbleCanvas = null;
+  let bubbleCtx = null;
+  let bubbleRaf = null;
+  let bubbles = [];
+  let hoveredBubbleIdx = -1;
+
+  const THEMES = [
+    { id: 'neural_default',  name: '🧠 Neural Cortex',  desc: 'Default Network', badge: '#22d3ee', isBubbles: false, css: '' },
+    {
+      id: 'crypto_bubbles',  name: '🫧 Crypto Bubbles', desc: 'Live Physics',    badge: '#34d399', isBubbles: true,
+      css: `body[data-neural-theme="crypto_bubbles"] { background: radial-gradient(circle at 50% 35%, #07192b 0%, #02060c 100%) !important; }`
+    },
+    {
+      id: 'cyberpunk_neon',  name: '⚡ Cyberpunk Neon', desc: 'Magenta & Cyan',  badge: '#f472b6', isBubbles: false,
+      css: `
+        body[data-neural-theme="cyberpunk_neon"] { background: radial-gradient(circle at 20% 20%, #2e0647 0%, #070212 72%) !important; }
+        body[data-neural-theme="cyberpunk_neon"] #protected-website-ui [id$="-widget"],
+        body[data-neural-theme="cyberpunk_neon"] #protected-website-ui #asset-terminal-card,
+        body[data-neural-theme="cyberpunk_neon"] #protected-website-ui #hud-wrapper-tab {
+          background: rgba(20, 6, 36, var(--neural-glass-alpha, 0.86)) !important;
+          border-color: rgba(236, 72, 153, 0.78) !important;
+          box-shadow: 0 0 24px rgba(236, 72, 153, 0.30) !important;
+        }`
+    },
+    {
+      id: 'obsidian_gold',   name: '👑 Obsidian Gold',  desc: 'Black & Gold',    badge: '#fbbf24', isBubbles: false,
+      css: `
+        body[data-neural-theme="obsidian_gold"] { background: radial-gradient(circle at 50% 20%, #2b1e05 0%, #060401 75%) !important; }
+        body[data-neural-theme="obsidian_gold"] #protected-website-ui [id$="-widget"],
+        body[data-neural-theme="obsidian_gold"] #protected-website-ui #asset-terminal-card,
+        body[data-neural-theme="obsidian_gold"] #protected-website-ui #hud-wrapper-tab {
+          background: rgba(24, 17, 4, var(--neural-glass-alpha, 0.86)) !important;
+          border-color: rgba(245, 158, 11, 0.78) !important;
+          box-shadow: 0 0 24px rgba(245, 158, 11, 0.28) !important;
+        }`
+    },
+    {
+      id: 'matrix_terminal', name: '💚 Matrix Terminal', desc: 'Emerald Quant',  badge: '#10b981', isBubbles: false,
+      css: `
+        body[data-neural-theme="matrix_terminal"] { background: radial-gradient(circle at 50% 50%, #032b15 0%, #010905 80%) !important; }
+        body[data-neural-theme="matrix_terminal"] #protected-website-ui [id$="-widget"],
+        body[data-neural-theme="matrix_terminal"] #protected-website-ui #asset-terminal-card,
+        body[data-neural-theme="matrix_terminal"] #protected-website-ui #hud-wrapper-tab {
+          background: rgba(3, 24, 12, var(--neural-glass-alpha, 0.86)) !important;
+          border-color: rgba(16, 185, 129, 0.78) !important;
+          box-shadow: 0 0 22px rgba(16, 185, 129, 0.28) !important;
+        }`
+    },
+    {
+      id: 'liquid_aurora',   name: '🌌 Liquid Aurora',  desc: 'Violet & Teal',   badge: '#a78bfa', isBubbles: false,
+      css: `
+        body[data-neural-theme="liquid_aurora"] { background: linear-gradient(135deg, #09223b 0%, #220c42 52%, #052e29 100%) !important; }
+        body[data-neural-theme="liquid_aurora"] #protected-website-ui [id$="-widget"],
+        body[data-neural-theme="liquid_aurora"] #protected-website-ui #asset-terminal-card,
+        body[data-neural-theme="liquid_aurora"] #protected-website-ui #hud-wrapper-tab {
+          background: rgba(12, 14, 36, var(--neural-glass-alpha, 0.86)) !important;
+          border-color: rgba(139, 92, 246, 0.75) !important;
+          box-shadow: 0 0 26px rgba(45, 212, 191, 0.24) !important;
+        }`
+    },
+    {
+      id: 'crimson_inferno', name: '🌋 Crimson Inferno', desc: 'Blood & Lava',   badge: '#fb7185', isBubbles: false,
+      css: `
+        body[data-neural-theme="crimson_inferno"] { background: radial-gradient(circle at 50% 30%, #3b0711 0%, #090204 78%) !important; }
+        body[data-neural-theme="crimson_inferno"] #protected-website-ui [id$="-widget"],
+        body[data-neural-theme="crimson_inferno"] #protected-website-ui #asset-terminal-card,
+        body[data-neural-theme="crimson_inferno"] #protected-website-ui #hud-wrapper-tab {
+          background: rgba(28, 5, 10, var(--neural-glass-alpha, 0.86)) !important;
+          border-color: rgba(244, 63, 94, 0.8) !important;
+          box-shadow: 0 0 24px rgba(244, 63, 94, 0.30) !important;
+        }`
+    },
+    {
+      id: 'arctic_frost',    name: '❄️ Arctic Frost',   desc: 'Glacier Blue',    badge: '#7dd3fc', isBubbles: false,
+      css: `
+        body[data-neural-theme="arctic_frost"] { background: radial-gradient(circle at 50% 20%, #0d324d 0%, #040e1a 80%) !important; }
+        body[data-neural-theme="arctic_frost"] #protected-website-ui [id$="-widget"],
+        body[data-neural-theme="arctic_frost"] #protected-website-ui #asset-terminal-card,
+        body[data-neural-theme="arctic_frost"] #protected-website-ui #hud-wrapper-tab {
+          background: rgba(7, 24, 42, var(--neural-glass-alpha, 0.86)) !important;
+          border-color: rgba(125, 211, 252, 0.8) !important;
+          box-shadow: 0 0 24px rgba(56, 189, 248, 0.28) !important;
+        }`
+    },
+    {
+      id: 'synthwave_80s',   name: '🌆 Synthwave 80s',  desc: 'Sunset Retro',    badge: '#fb923c', isBubbles: false,
+      css: `
+        body[data-neural-theme="synthwave_80s"] { background: linear-gradient(160deg, #240947 0%, #3d0e4c 52%, #3b150a 100%) !important; }
+        body[data-neural-theme="synthwave_80s"] #protected-website-ui [id$="-widget"],
+        body[data-neural-theme="synthwave_80s"] #protected-website-ui #asset-terminal-card,
+        body[data-neural-theme="synthwave_80s"] #protected-website-ui #hud-wrapper-tab {
+          background: rgba(26, 8, 38, var(--neural-glass-alpha, 0.86)) !important;
+          border-color: rgba(251, 146, 60, 0.75) !important;
+          box-shadow: 0 0 24px rgba(192, 38, 211, 0.28) !important;
+        }`
+    },
+    {
+      id: 'diamond_rgb',     name: '💎 Diamond RGB',    desc: 'Animated RGB',    badge: '#e879f9', isBubbles: false,
+      css: `
+        @keyframes neuralRgbBorder {
+          0%   { border-color: rgba(34, 211, 238, 0.9); box-shadow: 0 0 22px rgba(34, 211, 238, 0.35); }
+          33%  { border-color: rgba(192, 132, 252, 0.9); box-shadow: 0 0 22px rgba(192, 132, 252, 0.35); }
+          66%  { border-color: rgba(52, 211, 153, 0.9); box-shadow: 0 0 22px rgba(52, 211, 153, 0.35); }
+          100% { border-color: rgba(34, 211, 238, 0.9); box-shadow: 0 0 22px rgba(34, 211, 238, 0.35); }
+        }
+        body[data-neural-theme="diamond_rgb"] { background: radial-gradient(circle at 50% 40%, #121b36 0%, #03050a 80%) !important; }
+        body[data-neural-theme="diamond_rgb"] #protected-website-ui [id$="-widget"],
+        body[data-neural-theme="diamond_rgb"] #protected-website-ui #asset-terminal-card,
+        body[data-neural-theme="diamond_rgb"] #protected-website-ui #hud-wrapper-tab {
+          animation: neuralRgbBorder 4.5s linear infinite !important;
+        }`
+    }
+  ];
+
+  function injectThemeCss() {
+    let style = document.getElementById('neural-builtin-themes-css');
+    if (!style) {
+      style = document.createElement('style');
+      style.id = 'neural-builtin-themes-css';
+      document.head.appendChild(style);
+    }
+    style.textContent = THEMES.map(t => t.css).join('\n');
+  }
+
+  function startCryptoBubbles() {
+    const neuralCanvas = document.getElementById('neural-canvas');
+    if (neuralCanvas) neuralCanvas.style.opacity = '0.06';
+
+    if (!bubbleCanvas) {
+      bubbleCanvas = document.createElement('canvas');
+      bubbleCanvas.id = 'crypto-bubbles-canvas';
+      bubbleCanvas.style.cssText = 'position:fixed; inset:0; width:100vw; height:100vh; z-index:2; cursor:pointer;';
+      document.body.appendChild(bubbleCanvas);
+      bubbleCtx = bubbleCanvas.getContext('2d');
+
+      bubbleCanvas.addEventListener('mousemove', (e) => {
+        const rect = bubbleCanvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        hoveredBubbleIdx = -1;
+        for (let i = bubbles.length - 1; i >= 0; i--) {
+          const b = bubbles[i];
+          if (Math.hypot(mx - b.x, my - b.y) <= b.r) { hoveredBubbleIdx = i; break; }
+        }
+        bubbleCanvas.style.cursor = hoveredBubbleIdx !== -1 ? 'pointer' : 'default';
+      });
+
+      bubbleCanvas.addEventListener('click', () => {
+        if (hoveredBubbleIdx !== -1 && bubbles[hoveredBubbleIdx] && window.__openChartModal) {
+          window.__openChartModal(bubbles[hoveredBubbleIdx].nodeIdx);
+        }
+      });
+    }
+
+    bubbleCanvas.style.display = 'block';
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    bubbleCanvas.width = window.innerWidth * dpr;
+    bubbleCanvas.height = window.innerHeight * dpr;
+    bubbleCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const nodes = window.NeuralCanvasEngine ? window.NeuralCanvasEngine.getNodes().filter(n => n.asset) : [];
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    bubbles = nodes.map(n => {
+      const chg = Number(n.asset.change || 0);
+      const r = Math.max(30, Math.min(72, 34 + Math.abs(chg) * 3.8 + (n.isCore ? 8 : 0)));
+      return {
+        nodeIdx: n.index,
+        asset: n.asset,
+        x: 110 + Math.random() * Math.max(220, w - 220),
+        y: 110 + Math.random() * Math.max(220, h - 220),
+        vx: (Math.random() - 0.5) * 0.85,
+        vy: (Math.random() - 0.5) * 0.85,
+        r, targetR: r, phase: Math.random() * Math.PI * 2
+      };
+    });
+
+    const render = () => {
+      if (activeTheme !== 'crypto_bubbles') return;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      bubbleCtx.clearRect(0, 0, vw, vh);
+
+      for (let i = 0; i < bubbles.length; i++) {
+        const b = bubbles[i];
+        const chg = Number(b.asset.change || 0);
+        b.targetR = Math.max(30, Math.min(74, 34 + Math.abs(chg) * 3.8 + (b.nodeIdx < 12 ? 7 : 0)));
+        b.r += (b.targetR - b.r) * 0.05;
+        b.phase += 0.015;
+        b.x += b.vx + Math.sin(b.phase) * 0.14;
+        b.y += b.vy + Math.cos(b.phase) * 0.14;
+
+        if (b.x - b.r < 12) { b.x = b.r + 12; b.vx = Math.abs(b.vx); }
+        if (b.x + b.r > vw - 12) { b.x = vw - b.r - 12; b.vx = -Math.abs(b.vx); }
+        if (b.y - b.r < 72) { b.y = b.r + 72; b.vy = Math.abs(b.vy); }
+        if (b.y + b.r > vh - 18) { b.y = vh - b.r - 18; b.vy = -Math.abs(b.vy); }
+
+        for (let j = i + 1; j < bubbles.length; j++) {
+          const o = bubbles[j];
+          const dx = o.x - b.x;
+          const dy = o.y - b.y;
+          const dist = Math.hypot(dx, dy) || 1;
+          const minDist = b.r + o.r + 6;
+          if (dist < minDist) {
+            const overlap = (minDist - dist) * 0.03;
+            const nx = dx / dist;
+            const ny = dy / dist;
+            b.x -= nx * overlap; b.y -= ny * overlap;
+            o.x += nx * overlap; o.y += ny * overlap;
+          }
+        }
+      }
+
+      bubbles.forEach((b, idx) => {
+        const chg = Number(b.asset.change || 0);
+        const isPos = chg >= 0;
+        const isHover = idx === hoveredBubbleIdx;
+        const r = isHover ? b.r * 1.08 : b.r;
+
+        const grad = bubbleCtx.createRadialGradient(b.x - r * 0.3, b.y - r * 0.3, r * 0.1, b.x, b.y, r);
+        if (isPos) {
+          grad.addColorStop(0, 'rgba(52, 211, 153, 0.55)');
+          grad.addColorStop(0.65, 'rgba(16, 185, 129, 0.24)');
+          grad.addColorStop(1, 'rgba(5, 150, 105, 0.72)');
+        } else {
+          grad.addColorStop(0, 'rgba(251, 113, 133, 0.55)');
+          grad.addColorStop(0.65, 'rgba(244, 63, 94, 0.24)');
+          grad.addColorStop(1, 'rgba(225, 29, 72, 0.72)');
+        }
+
+        bubbleCtx.beginPath();
+        bubbleCtx.arc(b.x, b.y, r, 0, Math.PI * 2);
+        bubbleCtx.fillStyle = grad;
+        bubbleCtx.fill();
+        bubbleCtx.lineWidth = isHover ? 2.5 : 1.5;
+        bubbleCtx.strokeStyle = isPos ? 'rgba(52, 211, 153, 0.95)' : 'rgba(251, 113, 133, 0.95)';
+        bubbleCtx.stroke();
+
+        const shortSym = String(b.asset.symbol || '').replace('/USDT', '').replace('/USD', '');
+        bubbleCtx.fillStyle = '#ffffff';
+        bubbleCtx.textAlign = 'center';
+        bubbleCtx.textBaseline = 'middle';
+        bubbleCtx.font = `800 ${Math.max(10, Math.floor(r * 0.28))}px "JetBrains Mono", sans-serif`;
+        bubbleCtx.fillText(shortSym, b.x, b.y - r * 0.16);
+
+        bubbleCtx.font = `700 ${Math.max(9, Math.floor(r * 0.22))}px "JetBrains Mono", monospace`;
+        bubbleCtx.fillStyle = isPos ? '#a7f3d0' : '#fecdd3';
+        bubbleCtx.fillText(`${isPos ? '+' : ''}${chg.toFixed(2)}%`, b.x, b.y + r * 0.18);
+
+        if (r >= 46) {
+          bubbleCtx.font = `600 ${Math.max(8, Math.floor(r * 0.16))}px "JetBrains Mono", monospace`;
+          bubbleCtx.fillStyle = 'rgba(226, 232, 240, 0.84)';
+          bubbleCtx.fillText(window.formatPrice(b.asset.price), b.x, b.y + r * 0.45);
+        }
+      });
+
+      bubbleRaf = requestAnimationFrame(render);
+    };
+
+    if (bubbleRaf) cancelAnimationFrame(bubbleRaf);
+    bubbleRaf = requestAnimationFrame(render);
+  }
+
+  function stopCryptoBubbles() {
+    if (bubbleRaf) { cancelAnimationFrame(bubbleRaf); bubbleRaf = null; }
+    if (bubbleCanvas) bubbleCanvas.style.display = 'none';
+    const neuralCanvas = document.getElementById('neural-canvas');
+    if (neuralCanvas) neuralCanvas.style.opacity = '1';
+  }
+
+  function applyTheme(themeId, silent = false) {
+    const found = THEMES.find(t => t.id === themeId) || THEMES[0];
+    activeTheme = found.id;
+    localStorage.setItem(THEME_STORAGE_KEY, activeTheme);
+    document.body.setAttribute('data-neural-theme', activeTheme);
+
+    if (found.isBubbles) startCryptoBubbles();
+    else stopCryptoBubbles();
+
+    document.querySelectorAll('.neural-theme-choice-btn').forEach(btn => {
+      const isAct = btn.dataset.themeId === activeTheme;
+      btn.style.borderColor = isAct ? found.badge : 'rgba(148,163,184,0.28)';
+      btn.style.background = isAct ? 'rgba(30,41,59,0.98)' : 'rgba(15,23,42,0.82)';
+      btn.style.boxShadow = isAct ? `0 0 12px ${found.badge}55` : 'none';
+    });
+
+    const lbl = document.getElementById('admin-hub-active-theme');
+    if (lbl) lbl.textContent = found.name;
+
+    if (!silent) window.showToast(`Theme Applied: ${found.name}`, '🎨');
+  }
+
+  window.NeuralThemeManager = { applyTheme, getActiveTheme: () => activeTheme };
+
+  // =========================================================================
+  // BROADCAST BANNER & VISUAL ADMIN SETTINGS
+  // =========================================================================
+  function renderBroadcastBanner(message, type = 'gold') {
+    let banner = document.getElementById('neural-admin-broadcast-banner');
+    const clean = String(message || '').trim();
+    if (!clean) {
+      if (banner) banner.remove();
+      return;
+    }
+
+    const styles = {
+      gold:  { border: 'rgba(251,191,36,0.75)', color: '#fef08a', bg: 'linear-gradient(90deg, rgba(24,18,5,0.96), rgba(40,26,6,0.96))', icon: '📢' },
+      red:   { border: 'rgba(244,63,94,0.85)',  color: '#fecdd3', bg: 'linear-gradient(90deg, rgba(40,6,14,0.96), rgba(60,8,20,0.96))', icon: '🚨' },
+      green: { border: 'rgba(16,185,129,0.8)',  color: '#a7f3d0', bg: 'linear-gradient(90deg, rgba(4,30,18,0.96), rgba(6,45,28,0.96))', icon: '🟢' },
+      cyan:  { border: 'rgba(34,211,238,0.8)',  color: '#cffafe', bg: 'linear-gradient(90deg, rgba(6,24,38,0.96), rgba(8,36,52,0.96))', icon: '⚡' }
+    };
+    const st = styles[type] || styles.gold;
+
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'neural-admin-broadcast-banner';
+      document.body.appendChild(banner);
+    }
+    banner.style.cssText = [
+      'position:fixed', 'top:10px', 'left:50%', 'transform:translateX(-50%)',
+      'z-index:9980', 'max-width:90vw', 'padding:7px 16px', 'border-radius:999px',
+      `background:${st.bg}`, `border:1px solid ${st.border}`, `color:${st.color}`,
+      'font-family:"JetBrains Mono",monospace', 'font-size:11px', 'font-weight:800',
+      'box-shadow:0 6px 24px rgba(0,0,0,0.65)', 'backdrop-filter:blur(10px)',
+      'display:flex', 'align-items:center', 'gap:8px'
+    ].join(';');
+    banner.innerHTML = `<span>${st.icon}</span><span>${clean.replace(/</g, '&lt;')}</span>`;
+  }
+
+  function applyAdminVisualSettings(s) {
+    document.documentElement.style.setProperty('--neural-glass-alpha', ((Number(s.glassOpacity) || 86) / 100).toFixed(2));
+    renderBroadcastBanner(s.announcement, s.announcementType);
+    const levEl = document.getElementById('rr-leverage');
+    if (levEl && s.defaultLeverage) levEl.value = s.defaultLeverage;
+    const floatBtn = document.getElementById('admin-quick-theme-pill');
+    if (floatBtn) {
+      floatBtn.style.display = (isAdmin && s.showFloatingThemeBtn) ? 'flex' : 'none';
+    }
+  }
+
+  function setupAutoSignalTimer(sec) {
+    if (autoSignalTimer) { clearInterval(autoSignalTimer); autoSignalTimer = null; }
+    const s = Number(sec) || 0;
+    if (s >= 60) {
+      autoSignalTimer = setInterval(() => {
+        if (!window.NEURAL_ADMIN_SETTINGS?.signalsPaused && currentUser) {
+          generateNearEntrySignal();
+        }
+      }, s * 1000);
+    }
+  }
+
+  // =========================================================================
+  // UNIFIED ADMIN COMMAND CENTER (INJECTED DIRECTLY INSIDE #admin-panel)
+  // =========================================================================
+  function mountAdminCommandCenter() {
+    const adminPanel = document.getElementById('admin-panel');
+    if (!adminPanel) return;
+
+    // Clean up any legacy boxes from external scripts to avoid duplicates
+    ['admin-theme-switcher-box', 'admin-themes-section', 'admin-pro-controls-box'].forEach(oldId => {
+      const el = document.getElementById(oldId);
+      if (el) el.remove();
+    });
+
+    adminPanel.style.overflowY = 'auto';
+
+    if (document.getElementById('admin-pro-hub')) return;
+
+    const s = loadAdminSettings();
+    const hub = document.createElement('div');
+    hub.id = 'admin-pro-hub';
+    hub.style.cssText = [
+      'flex-shrink:0', 'width:100%', 'display:block', 'margin:8px 0 12px 0',
+      'padding:10px', 'border-radius:12px',
+      'background:rgba(2, 6, 23, 0.96)',
+      'border:1px solid rgba(34, 211, 238, 0.5)',
+      'box-shadow:0 0 18px rgba(34, 211, 238, 0.14)',
+      'font-family:"JetBrains Mono", monospace'
+    ].join(';');
+
+    hub.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+        <span style="font-size:10px; font-weight:800; color:#67e8f9; letter-spacing:0.05em;">👑 ADMIN COMMAND CENTER</span>
+        <span id="admin-hub-api-status" style="font-size:9px; font-weight:800; color:#34d399;">● LIVE</span>
+      </div>
+
+      <!-- 3-Tab Admin Switcher -->
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:5px; margin-bottom:10px;">
+        <button type="button" class="admin-hub-tab-btn" data-tab="themes"
+          style="padding:6px 4px; border-radius:7px; font-size:9px; font-weight:800; cursor:pointer; border:1px solid #22d3ee; background:rgba(34,211,238,0.22); color:#ecfeff;">🎨 THEMES</button>
+        <button type="button" class="admin-hub-tab-btn" data-tab="signals"
+          style="padding:6px 4px; border-radius:7px; font-size:9px; font-weight:800; cursor:pointer; border:1px solid rgba(148,163,184,0.25); background:rgba(15,23,42,0.85); color:#94a3b8;">🎯 SIGNALS</button>
+        <button type="button" class="admin-hub-tab-btn" data-tab="system"
+          style="padding:6px 4px; border-radius:7px; font-size:9px; font-weight:800; cursor:pointer; border:1px solid rgba(148,163,184,0.25); background:rgba(15,23,42,0.85); color:#94a3b8;">📢 SYSTEM</button>
+      </div>
+
+      <!-- TAB 1: THEMES (10) -->
+      <div id="admin-hub-pane-themes" style="display:block;">
+        <div style="font-size:9px; color:#94a3b8; margin-bottom:6px;">
+          Active Theme: <span id="admin-hub-active-theme" style="color:#34d399; font-weight:800;">-</span>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:10px;">
+          ${THEMES.map(t => `
+            <button type="button" class="neural-theme-choice-btn" data-theme-id="${t.id}"
+              style="text-align:left; padding:7px; border-radius:8px; border:1px solid rgba(148,163,184,0.28); background:rgba(15,23,42,0.82); cursor:pointer;">
+              <div style="display:flex; justify-content:space-between; align-items:center; gap:3px;">
+                <span style="font-size:9.5px; font-weight:800; color:#ffffff;">${t.name}</span>
+                <span style="width:7px; height:7px; border-radius:999px; background:${t.badge}; flex-shrink:0;"></span>
+              </div>
+              <div style="font-size:8px; color:#94a3b8; margin-top:2px;">${t.desc}</div>
+            </button>
+          `).join('')}
+        </div>
+
+        <div style="padding-top:8px; border-top:1px solid rgba(56,189,248,0.18); display:flex; flex-direction:column; gap:6px;">
+          <div style="display:flex; justify-content:space-between; font-size:9px; color:#cbd5e1;">
+            <span>🪟 Glass Panel Opacity</span>
+            <span id="admin-glass-opacity-val" style="color:#38bdf8; font-weight:800;">${s.glassOpacity}%</span>
+          </div>
+          <input id="admin-glass-opacity-slider" type="range" min="45" max="98" value="${s.glassOpacity}" style="width:100%; accent-color:#22d3ee;" />
+
+          <label style="display:flex; align-items:center; justify-content:space-between; font-size:9px; color:#cbd5e1; cursor:pointer;">
+            <span>Show Floating 🎨 Button</span>
+            <input id="admin-float-btn-toggle" type="checkbox" ${s.showFloatingThemeBtn ? 'checked' : ''} style="accent-color:#22d3ee;" />
+          </label>
+        </div>
+      </div>
+
+      <!-- TAB 2: SIGNALS ENGINE -->
+      <div id="admin-hub-pane-signals" style="display:none; flex-direction:column; gap:8px;">
+        <button id="admin-sig-pause-btn" type="button"
+          style="width:100%; padding:7px; border-radius:8px; font-size:9.5px; font-weight:800; cursor:pointer; border:1px solid ${s.signalsPaused ? 'rgba(244,63,94,0.7)' : 'rgba(16,185,129,0.65)'}; background:${s.signalsPaused ? 'rgba(244,63,94,0.2)' : 'rgba(16,185,129,0.2)'}; color:${s.signalsPaused ? '#fda4af' : '#6ee7b7'};">
+          ${s.signalsPaused ? '⏸️ SIGNALS PAUSED (RESUME)' : '▶️ SIGNALS ACTIVE (PAUSE)'}
+        </button>
+
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-size:9px; color:#94a3b8;">🧭 DIRECTION FILTER</span>
+          <select id="admin-dir-filter" style="padding:4px 6px; border-radius:6px; background:#0f172a; border:1px solid rgba(56,189,248,0.35); color:#f8fafc; font-size:9px; font-weight:700;">
+            <option value="both" ${s.directionFilter === 'both' ? 'selected' : ''}>BOTH (LONG + SHORT)</option>
+            <option value="long_only" ${s.directionFilter === 'long_only' ? 'selected' : ''}>LONG ONLY 🟢</option>
+            <option value="short_only" ${s.directionFilter === 'short_only' ? 'selected' : ''}>SHORT ONLY 🔴</option>
+          </select>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-size:9px; color:#94a3b8;">⚖️ R:R TARGET MODE</span>
+          <select id="admin-rr-mode" style="padding:4px 6px; border-radius:6px; background:#0f172a; border:1px solid rgba(56,189,248,0.35); color:#f8fafc; font-size:9px; font-weight:700;">
+            <option value="conservative" ${s.rrMode === 'conservative' ? 'selected' : ''}>Conservative (1:1.8)</option>
+            <option value="balanced" ${s.rrMode === 'balanced' ? 'selected' : ''}>Balanced (1:2.8)</option>
+            <option value="sniper" ${s.rrMode === 'sniper' ? 'selected' : ''}>Sniper Max (1:4.2)</option>
+          </select>
+        </div>
+
+        <div>
+          <div style="display:flex; justify-content:space-between; font-size:9px; color:#94a3b8; margin-bottom:2px;">
+            <span>🎯 MIN AI CONFIDENCE</span>
+            <span id="admin-min-conf-val" style="color:#34d399; font-weight:800;">${s.minConfidence}%</span>
+          </div>
+          <input id="admin-min-conf-slider" type="range" min="60" max="95" step="5" value="${s.minConfidence}" style="width:100%; accent-color:#22d3ee;" />
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-size:9px; color:#94a3b8;">⏱️ AUTO-SIGNAL RADAR</span>
+          <select id="admin-auto-sig" style="padding:4px 6px; border-radius:6px; background:#0f172a; border:1px solid rgba(56,189,248,0.35); color:#f8fafc; font-size:9px; font-weight:700;">
+            <option value="0" ${Number(s.autoSignalSec) === 0 ? 'selected' : ''}>Manual Only</option>
+            <option value="60" ${Number(s.autoSignalSec) === 60 ? 'selected' : ''}>Every 1 Min</option>
+            <option value="180" ${Number(s.autoSignalSec) === 180 ? 'selected' : ''}>Every 3 Min</option>
+            <option value="300" ${Number(s.autoSignalSec) === 300 ? 'selected' : ''}>Every 5 Min</option>
+          </select>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-size:9px; color:#94a3b8;">⚡ DEFAULT LEVERAGE</span>
+          <select id="admin-def-lev" style="padding:4px 6px; border-radius:6px; background:#0f172a; border:1px solid rgba(56,189,248,0.35); color:#f8fafc; font-size:9px; font-weight:700;">
+            <option value="5" ${Number(s.defaultLeverage) === 5 ? 'selected' : ''}>5x Safe</option>
+            <option value="10" ${Number(s.defaultLeverage) === 10 ? 'selected' : ''}>10x Standard</option>
+            <option value="20" ${Number(s.defaultLeverage) === 20 ? 'selected' : ''}>20x Pro</option>
+            <option value="50" ${Number(s.defaultLeverage) === 50 ? 'selected' : ''}>50x High Risk</option>
+          </select>
+        </div>
+
+        <button id="admin-force-signal-btn" type="button"
+          style="width:100%; padding:8px; border-radius:8px; background:rgba(34,211,238,0.22); border:1px solid rgba(34,211,238,0.7); color:#ecfeff; font-size:10px; font-weight:800; cursor:pointer;">
+          ⚡ FIRE LIVE SIGNAL NOW
+        </button>
+      </div>
+
+      <!-- TAB 3: SYSTEM & BROADCAST -->
+      <div id="admin-hub-pane-system" style="display:none; flex-direction:column; gap:8px;">
+        <div style="display:flex; flex-direction:column; gap:5px;">
+          <span style="font-size:9px; color:#94a3b8; font-weight:700;">📢 GLOBAL ANNOUNCEMENT BANNER</span>
+          <input id="admin-bc-input" type="text" placeholder="e.g. FOMC News in 10m — Trade Safe!"
+            value="${String(s.announcement || '').replace(/"/g, '&quot;')}"
+            style="width:100%; padding:6px 8px; border-radius:7px; background:#0f172a; border:1px solid rgba(56,189,248,0.35); color:#f8fafc; font-size:10px; outline:none;" />
+          <div style="display:flex; gap:5px;">
+            <select id="admin-bc-type" style="flex:1; padding:5px; border-radius:7px; background:#0f172a; border:1px solid rgba(56,189,248,0.35); color:#f8fafc; font-size:9px;">
+              <option value="gold" ${s.announcementType === 'gold' ? 'selected' : ''}>🟡 Gold Alert</option>
+              <option value="red" ${s.announcementType === 'red' ? 'selected' : ''}>🔴 Red Danger</option>
+              <option value="green" ${s.announcementType === 'green' ? 'selected' : ''}>🟢 Green Bullish</option>
+              <option value="cyan" ${s.announcementType === 'cyan' ? 'selected' : ''}>🔵 Cyan Info</option>
+            </select>
+            <button id="admin-bc-set-btn" type="button" style="padding:5px 10px; border-radius:7px; background:rgba(245,158,11,0.25); border:1px solid rgba(251,191,36,0.7); color:#fef08a; font-size:9px; font-weight:800; cursor:pointer;">SET</button>
+            <button id="admin-bc-clear-btn" type="button" style="padding:5px 8px; border-radius:7px; background:rgba(244,63,94,0.22); border:1px solid rgba(244,63,94,0.6); color:#fda4af; font-size:9px; font-weight:800; cursor:pointer;">✕</button>
+          </div>
+        </div>
+
+        <div style="padding:7px; border-radius:8px; background:rgba(15,23,42,0.85); border:1px solid rgba(56,189,248,0.22); font-size:9px; color:#cbd5e1; display:flex; flex-direction:column; gap:3px;">
+          <div style="display:flex; justify-content:space-between;"><span>Live Feed:</span><span id="admin-sys-feed-stat" style="color:#34d399; font-weight:800;">BINANCE VISION</span></div>
+          <div style="display:flex; justify-content:space-between;"><span>Tracked Assets:</span><span id="admin-sys-coin-count" style="color:#38bdf8; font-weight:800;">-</span></div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+          <button id="admin-sys-sync-btn" type="button" style="padding:7px; border-radius:8px; background:rgba(16,185,129,0.2); border:1px solid rgba(16,185,129,0.55); color:#6ee7b7; font-size:9px; font-weight:800; cursor:pointer;">🔄 FORCE SYNC</button>
+          <button id="admin-sys-reset-tabs-btn" type="button" style="padding:7px; border-radius:8px; background:rgba(56,189,248,0.18); border:1px solid rgba(56,189,248,0.5); color:#7dd3fc; font-size:9px; font-weight:800; cursor:pointer;">📐 RESET TABS</button>
+          <button id="admin-sys-export-btn" type="button" style="padding:7px; border-radius:8px; background:rgba(168,85,247,0.2); border:1px solid rgba(168,85,247,0.55); color:#d8b4fe; font-size:9px; font-weight:800; cursor:pointer;">💾 EXPORT JSON</button>
+          <button id="admin-sys-clear-pnl-btn" type="button" style="padding:7px; border-radius:8px; background:rgba(244,63,94,0.2); border:1px solid rgba(244,63,94,0.55); color:#fda4af; font-size:9px; font-weight:800; cursor:pointer;">🗑️ RESET P&L</button>
+        </div>
+      </div>
+    `;
+
+    // Insert cleanly right after the header row of #admin-panel (so it's ALWAYS at the very top!)
+    const headerRow = adminPanel.firstElementChild;
+    if (headerRow && headerRow.nextElementSibling) {
+      adminPanel.insertBefore(hub, headerRow.nextElementSibling);
+    } else {
+      adminPanel.appendChild(hub);
+    }
+
+    // Wire Admin Tab Switcher
+    const panes = {
+      themes:  hub.querySelector('#admin-hub-pane-themes'),
+      signals: hub.querySelector('#admin-hub-pane-signals'),
+      system:  hub.querySelector('#admin-hub-pane-system')
+    };
+    hub.querySelectorAll('.admin-hub-tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const target = btn.dataset.tab;
+        Object.entries(panes).forEach(([k, el]) => {
+          if (el) el.style.display = k === target ? (k === 'themes' ? 'block' : 'flex') : 'none';
+        });
+        hub.querySelectorAll('.admin-hub-tab-btn').forEach(b => {
+          const act = b.dataset.tab === target;
+          b.style.borderColor = act ? '#22d3ee' : 'rgba(148,163,184,0.25)';
+          b.style.background = act ? 'rgba(34,211,238,0.22)' : 'rgba(15,23,42,0.85)';
+          b.style.color = act ? '#ecfeff' : '#94a3b8';
+        });
+      });
+    });
+
+    // Wire Theme Buttons
+    hub.querySelectorAll('.neural-theme-choice-btn').forEach(btn => {
+      btn.addEventListener('click', () => applyTheme(btn.dataset.themeId));
+    });
+
+    const glassSlider = hub.querySelector('#admin-glass-opacity-slider');
+    const glassVal = hub.querySelector('#admin-glass-opacity-val');
+    glassSlider.addEventListener('input', () => {
+      glassVal.textContent = `${glassSlider.value}%`;
+      saveAdminSettings({ glassOpacity: Number(glassSlider.value) });
+    });
+
+    hub.querySelector('#admin-float-btn-toggle').addEventListener('change', (e) => {
+      saveAdminSettings({ showFloatingThemeBtn: e.target.checked });
+    });
+
+    // Wire Signal Controls
+    const pauseBtn = hub.querySelector('#admin-sig-pause-btn');
+    pauseBtn.addEventListener('click', () => {
+      const nextPaused = !loadAdminSettings().signalsPaused;
+      saveAdminSettings({ signalsPaused: nextPaused });
+      pauseBtn.textContent = nextPaused ? '⏸️ SIGNALS PAUSED (RESUME)' : '▶️ SIGNALS ACTIVE (PAUSE)';
+      pauseBtn.style.borderColor = nextPaused ? 'rgba(244,63,94,0.7)' : 'rgba(16,185,129,0.65)';
+      pauseBtn.style.background = nextPaused ? 'rgba(244,63,94,0.2)' : 'rgba(16,185,129,0.2)';
+      pauseBtn.style.color = nextPaused ? '#fda4af' : '#6ee7b7';
+      window.showToast(nextPaused ? 'Signals Paused by Admin' : 'Signals Resumed!', nextPaused ? '⏸️' : '▶️');
+    });
+
+    hub.querySelector('#admin-dir-filter').addEventListener('change', (e) => {
+      saveAdminSettings({ directionFilter: e.target.value });
+      window.showToast(`Direction Filter: ${e.target.value.replace('_', ' ').toUpperCase()}`, '🧭');
+    });
+
+    hub.querySelector('#admin-rr-mode').addEventListener('change', (e) => {
+      saveAdminSettings({ rrMode: e.target.value });
+      window.showToast(`R:R Mode: ${e.target.value.toUpperCase()}`, '⚖️');
+    });
+
+    const confSlider = hub.querySelector('#admin-min-conf-slider');
+    const confVal = hub.querySelector('#admin-min-conf-val');
+    confSlider.addEventListener('input', () => {
+      confVal.textContent = `${confSlider.value}%`;
+      saveAdminSettings({ minConfidence: Number(confSlider.value) });
+    });
+
+    hub.querySelector('#admin-auto-sig').addEventListener('change', (e) => {
+      const sec = Number(e.target.value);
+      saveAdminSettings({ autoSignalSec: sec });
+      window.showToast(sec > 0 ? `Auto-Signal Radar: Every ${sec / 60}m` : 'Auto-Signal Radar: OFF', '⏱️');
+    });
+
+    hub.querySelector('#admin-def-lev').addEventListener('change', (e) => {
+      saveAdminSettings({ defaultLeverage: Number(e.target.value) });
+      window.showToast(`Default Leverage set to ${e.target.value}x`, '⚡');
+    });
+
+    hub.querySelector('#admin-force-signal-btn').addEventListener('click', () => generateNearEntrySignal());
+
+    // Wire System & Broadcast Controls
+    const bcInput = hub.querySelector('#admin-bc-input');
+    const bcType = hub.querySelector('#admin-bc-type');
+    hub.querySelector('#admin-bc-set-btn').addEventListener('click', () => {
+      saveAdminSettings({ announcement: bcInput.value.trim(), announcementType: bcType.value });
+      window.showToast('Global Broadcast Updated!', '📢');
+    });
+    hub.querySelector('#admin-bc-clear-btn').addEventListener('click', () => {
+      bcInput.value = '';
+      saveAdminSettings({ announcement: '' });
+      window.showToast('Broadcast Cleared', '🧹');
+    });
+
+    hub.querySelector('#admin-sys-sync-btn').addEventListener('click', async () => {
+      await Promise.all([syncLivePrices(), syncNewsFromBackend()]);
+      window.showToast('Live Binance Prices & RSS News Synced!', '🔄');
+    });
+
+    hub.querySelector('#admin-sys-reset-tabs-btn').addEventListener('click', () => {
+      document.querySelectorAll('.tab-reset-pos-btn, #pnl-reset-pos-btn, #reset-card-pos-btn').forEach(b => b.click());
+      window.showToast('All Floating Tabs Reset!', '📐');
+    });
+
+    hub.querySelector('#admin-sys-export-btn').addEventListener('click', () => {
+      const dump = {};
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k) {
+          try { dump[k] = JSON.parse(localStorage.getItem(k)); }
+          catch (_) { dump[k] = localStorage.getItem(k); }
+        }
+      }
+      const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `neural-admin-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      window.showToast('Admin JSON Backup Exported!', '💾');
+    });
+
+    hub.querySelector('#admin-sys-clear-pnl-btn').addEventListener('click', () => {
+      Object.keys(localStorage).forEach(k => {
+        if (/pnl|trade/i.test(k)) localStorage.removeItem(k);
+      });
+      if (window.NeuralPnlManager?.load) window.NeuralPnlManager.load();
+      window.showToast('Trade Logs & P&L Reset!', '🗑️');
+    });
+
+    // Floating Admin-Only Quick Theme Button (opens Admin Panel right to THEMES tab)
+    if (!document.getElementById('admin-quick-theme-pill')) {
+      const pill = document.createElement('button');
+      pill.id = 'admin-quick-theme-pill';
+      pill.type = 'button';
+      pill.textContent = '🎨 THEMES';
+      pill.style.cssText = [
+        'position:fixed', 'bottom:18px', 'right:18px', 'z-index:9990',
+        'display:none', 'align-items:center', 'gap:6px',
+        'padding:9px 14px', 'border-radius:999px',
+        'background:rgba(6,16,30,0.94)', 'backdrop-filter:blur(12px)',
+        'border:1px solid rgba(34,211,238,0.75)', 'color:#67e8f9',
+        'font-family:"JetBrains Mono",monospace', 'font-size:11px', 'font-weight:800',
+        'box-shadow:0 0 22px rgba(34,211,238,0.35)', 'cursor:pointer'
+      ].join(';');
+      pill.addEventListener('click', () => {
+        adminPanel.classList.remove('hidden', 'translate-x-full');
+        adminPanel.classList.add('flex');
+        const themeTabBtn = hub.querySelector('.admin-hub-tab-btn[data-tab="themes"]');
+        if (themeTabBtn) themeTabBtn.click();
+      });
+      document.body.appendChild(pill);
+    }
+
+    applyTheme(activeTheme, true);
+    applyAdminVisualSettings(s);
+  }
+
   // ---------------- LIVE REAL-TIME PRICE SYNC (DIRECT BINANCE VISION + BACKEND) ----------------
   async function syncLivePrices() {
     const priceMap = {};
     const fundingMap = {};
 
-    // 1. Direct Binance Data Vision (works everywhere, instant real prices)
     try {
       const resp = await fetch('https://data-api.binance.vision/api/v3/ticker/24hr');
       if (resp.ok) {
@@ -80,11 +815,12 @@
       }
     } catch (_) {}
 
-    // 2. Backend scan for live funding rates (plus backup prices)
     try {
       const baseUrl = window.NEURAL_CONFIG?.API_BASE_URL || '';
       const resp = await fetch(`${baseUrl}/api/market/binance-scan`);
+      const badge = document.getElementById('admin-hub-api-status');
       if (resp.ok) {
+        if (badge) { badge.textContent = '● API ONLINE'; badge.style.color = '#34d399'; }
         const data = await resp.json();
         if (data.ok && Array.isArray(data.pairs)) {
           data.pairs.forEach(p => {
@@ -94,11 +830,19 @@
             }
           });
         }
+      } else if (badge) {
+        badge.textContent = '● DIRECT MODE';
+        badge.style.color = '#fbbf24';
       }
-    } catch (_) {}
+    } catch (_) {
+      const badge = document.getElementById('admin-hub-api-status');
+      if (badge) { badge.textContent = '● DIRECT MODE'; badge.style.color = '#fbbf24'; }
+    }
 
-    // 3. Apply real live prices to EVERY node immediately
     const nodes = window.NeuralCanvasEngine ? window.NeuralCanvasEngine.getNodes() : [];
+    const countEl = document.getElementById('admin-sys-coin-count');
+    if (countEl) countEl.textContent = `${nodes.filter(n => n.asset).length} PAIRS`;
+
     nodes.forEach(n => {
       if (!n.asset) return;
       const key = normalizeSymbolKey(n.asset);
@@ -123,9 +867,9 @@
       const list = document.getElementById('live-news-radar-list');
       if (!list || !data.ok) return;
 
-      const nodes = window.NeuralCanvasEngine.getNodes();
+      const nodes = window.NeuralCanvasEngine ? window.NeuralCanvasEngine.getNodes() : [];
       const nearCoins = nodes
-        .filter(n => n.asset && window.NeuralPnlManager.getNodeProximity(n).isNear)
+        .filter(n => n.asset && window.NeuralPnlManager?.getNodeProximity(n).isNear)
         .sort((a, b) => window.NeuralPnlManager.getNodeProximity(a).distPct - window.NeuralPnlManager.getNodeProximity(b).distPct)
         .slice(0, 5);
 
@@ -159,7 +903,7 @@
   }
 
   function updateBtcSummary() {
-    const nodes = window.NeuralCanvasEngine.getNodes();
+    const nodes = window.NeuralCanvasEngine ? window.NeuralCanvasEngine.getNodes() : [];
     if (!nodes[0] || !nodes[0].asset) return;
     const btc = nodes[0].asset;
     const pEl = document.getElementById('btc-sum-price');
@@ -172,28 +916,33 @@
   }
 
   function updateTerminalCard() {
-    const nodes = window.NeuralCanvasEngine.getNodes();
-    const node = nodes[window.NeuralCanvasEngine.getSelectedIndex()] || nodes[0];
+    const nodes = window.NeuralCanvasEngine ? window.NeuralCanvasEngine.getNodes() : [];
+    const node = nodes[window.NeuralCanvasEngine?.getSelectedIndex?.() || 0] || nodes[0];
     if (!node || !node.asset) return;
 
-    document.getElementById('term-symbol').textContent = node.asset.symbol;
-    document.getElementById('term-price').textContent = window.formatPrice(node.asset.price);
+    const symEl = document.getElementById('term-symbol');
+    const pEl = document.getElementById('term-price');
     const chg = document.getElementById('term-change');
-    chg.textContent = `${node.asset.change >= 0 ? '+' : ''}${node.asset.change.toFixed(2)}% (24h)`;
-    chg.className = node.asset.change >= 0 ? 'text-[11px] text-emerald-400 font-semibold' : 'text-[11px] text-rose-400 font-semibold';
+    if (symEl) symEl.textContent = node.asset.symbol;
+    if (pEl) pEl.textContent = window.formatPrice(node.asset.price);
+    if (chg) {
+      chg.textContent = `${node.asset.change >= 0 ? '+' : ''}${node.asset.change.toFixed(2)}% (24h)`;
+      chg.className = node.asset.change >= 0 ? 'text-[11px] text-emerald-400 font-semibold' : 'text-[11px] text-rose-400 font-semibold';
+    }
 
-    document.getElementById('term-market-update-box').classList.toggle('hidden', hasActiveSignal);
-    document.getElementById('term-signal-box').classList.toggle('hidden', !hasActiveSignal);
+    document.getElementById('term-market-update-box')?.classList.toggle('hidden', hasActiveSignal);
+    document.getElementById('term-signal-box')?.classList.toggle('hidden', !hasActiveSignal);
   }
 
   // ---------------- REAL-TIME 15M MARKET STRUCTURE SIGNAL ENGINE ----------------
   async function generateNearEntrySignal() {
-    if (window.NEURAL_ADMIN_SETTINGS?.signalsPaused) {
+    const settings = loadAdminSettings();
+    if (settings.signalsPaused) {
       window.showToast('Signals are Paused by Admin', '⏸️');
       return;
     }
 
-    const nodes = window.NeuralCanvasEngine.getNodes().filter(n => n.asset);
+    const nodes = (window.NeuralCanvasEngine ? window.NeuralCanvasEngine.getNodes() : []).filter(n => n.asset);
     if (!nodes.length) return;
 
     let pool = nodes.filter(n => !recentSymbols.includes(n.asset.symbol));
@@ -233,12 +982,17 @@
     const swingLow  = Math.min(...recent.map(k => k.low));
     const midRange  = (swingHigh + swingLow) / 2;
 
-    // Direction based on real Dealing Range (Discount < 50% = BUY, Premium > 50% = SELL) + Funding confluence
-    const inDiscount = livePrice < midRange;
-    const isLong = inDiscount;
+    let isLong = livePrice < midRange;
+    if (settings.directionFilter === 'long_only') isLong = true;
+    if (settings.directionFilter === 'short_only') isLong = false;
+
     const spec = isLong
       ? { isLong: true, side: 'BUY / LONG', mode: 'green_buy' }
       : { isLong: false, side: 'SELL / SHORT', mode: 'red_sell' };
+
+    const rrMult = settings.rrMode === 'conservative' ? { tp1: 1.4, tp2: 1.8 }
+      : settings.rrMode === 'sniper' ? { tp1: 2.5, tp2: 4.2 }
+      : { tp1: 1.8, tp2: 2.8 };
 
     const entryPrice = livePrice;
     let slPrice, tp1Price, tp2Price;
@@ -246,18 +1000,17 @@
     if (isLong) {
       slPrice = Math.min(swingLow * 0.999, livePrice * 0.994);
       const risk = Math.max(livePrice * 0.0025, entryPrice - slPrice);
-      tp1Price = Math.max(midRange, entryPrice + risk * 1.8);
-      tp2Price = Math.max(swingHigh * 0.999, entryPrice + risk * 2.8);
+      tp1Price = entryPrice + risk * rrMult.tp1;
+      tp2Price = Math.max(swingHigh * 0.999, entryPrice + risk * rrMult.tp2);
     } else {
       slPrice = Math.max(swingHigh * 1.001, livePrice * 1.006);
       const risk = Math.max(livePrice * 0.0025, slPrice - entryPrice);
-      tp1Price = Math.min(midRange, entryPrice - risk * 1.8);
-      tp2Price = Math.min(swingLow * 1.001, entryPrice - risk * 2.8);
+      tp1Price = entryPrice - risk * rrMult.tp1;
+      tp2Price = Math.min(swingLow * 1.001, entryPrice - risk * rrMult.tp2);
     }
 
-    const minConf = Number(window.NEURAL_ADMIN_SETTINGS?.minConfidence) || 75;
     const distFromEq = Math.abs(livePrice - midRange) / (swingHigh - swingLow || 1);
-    const confidence = Math.max(minConf, Math.min(96, Math.round(78 + distFromEq * 30)));
+    const confidence = Math.max(Number(settings.minConfidence) || 75, Math.min(96, Math.round(78 + distFromEq * 30)));
 
     const sig = {
       symbol: chosen.asset.symbol,
@@ -279,21 +1032,22 @@
     window.NeuralCanvasEngine.setNeuralColorMode(spec.mode, sig);
     window.NeuralCanvasEngine.triggerBurst(chosen.x, chosen.y);
 
-    document.getElementById('sig-direction-badge').textContent = `${sig.direction} • ${sig.confidence}% LIVE`;
-    document.getElementById('sig-entry').textContent = window.formatPrice(sig.entryPrice);
-    document.getElementById('sig-tp1').textContent = window.formatPrice(sig.tp1Price);
-    document.getElementById('sig-tp2').textContent = window.formatPrice(sig.tp2Price);
-    document.getElementById('sig-sl').textContent = window.formatPrice(sig.slPrice);
-    document.getElementById('sig-reasoning').textContent = `Real-Time 15m ${isLong ? 'Discount' : 'Premium'} Structure Signal on ${sig.symbol} @ ${window.formatPrice(entryPrice)} (Range: ${window.formatPrice(swingLow)} – ${window.formatPrice(swingHigh)}).`;
+    const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    setText('sig-direction-badge', `${sig.direction} • ${sig.confidence}% LIVE`);
+    setText('sig-entry', window.formatPrice(sig.entryPrice));
+    setText('sig-tp1', window.formatPrice(sig.tp1Price));
+    setText('sig-tp2', window.formatPrice(sig.tp2Price));
+    setText('sig-sl', window.formatPrice(sig.slPrice));
+    setText('sig-reasoning', `Real-Time 15m ${isLong ? 'Discount' : 'Premium'} Signal (${settings.rrMode.toUpperCase()}) on ${sig.symbol} @ ${window.formatPrice(entryPrice)}.`);
 
     updateTerminalCard();
-    window.NeuralPnlManager.logTrade({ ...sig, source: 'REALTIME_15M', entryDistancePct: 0 });
+    window.NeuralPnlManager?.logTrade({ ...sig, source: 'REALTIME_15M', entryDistancePct: 0 });
     window.showToast(`${isLong ? '🟢 BUY' : '🔴 SELL'} Live Signal: ${sig.symbol} @ ${window.formatPrice(entryPrice)}`, isLong ? '🚀' : '🔻');
   }
 
   // ---------------- LIVE TRADINGVIEW CHART MODAL ----------------
   window.__openChartModal = async function (nodeIdx) {
-    const nodes = window.NeuralCanvasEngine.getNodes();
+    const nodes = window.NeuralCanvasEngine ? window.NeuralCanvasEngine.getNodes() : [];
     const node = nodes[nodeIdx] || nodes[0];
     if (!node || !node.asset) return;
 
@@ -301,14 +1055,21 @@
     updateTerminalCard();
 
     const modal = document.getElementById('coin-chart-modal');
-    modal.classList.remove('hidden');
-    modal.classList.add('flex');
+    if (modal) {
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
 
-    document.getElementById('chart-modal-symbol').textContent = node.asset.symbol;
-    document.getElementById('chart-modal-price').textContent = window.formatPrice(node.asset.price);
+    const symEl = document.getElementById('chart-modal-symbol');
+    const pEl = document.getElementById('chart-modal-price');
+    if (symEl) symEl.textContent = node.asset.symbol;
+    if (pEl) pEl.textContent = window.formatPrice(node.asset.price);
+
     const rawSym = normalizeSymbolKey(node.asset) || 'BTCUSDT';
-    document.getElementById('chart-binance-link').href = `https://www.binance.com/en/futures/${rawSym}`;
-    document.getElementById('chart-tradingview-link').href = `https://www.tradingview.com/chart/?symbol=BINANCE:${rawSym}.P`;
+    const bLink = document.getElementById('chart-binance-link');
+    const tvLink = document.getElementById('chart-tradingview-link');
+    if (bLink) bLink.href = `https://www.binance.com/en/futures/${rawSym}`;
+    if (tvLink) tvLink.href = `https://www.tradingview.com/chart/?symbol=BINANCE:${rawSym}.P`;
 
     const sig = node.lastSignal || {};
     const canvasEl = document.getElementById('klines-chart-canvas');
@@ -327,12 +1088,12 @@
 
   // ---------------- RR CALCULATOR ----------------
   function calculateRR() {
-    const cap = parseFloat(document.getElementById('rr-capital').value) || 0;
-    const riskPct = parseFloat(document.getElementById('rr-risk-pct').value) || 0;
-    const rr = parseFloat(document.getElementById('rr-ratio-input').value) || 2;
-    const entry = parseFloat(document.getElementById('rr-entry-price').value) || 0;
-    const sl = parseFloat(document.getElementById('rr-sl-price').value) || 0;
-    const lev = parseFloat(document.getElementById('rr-leverage').value) || 10;
+    const cap = parseFloat(document.getElementById('rr-capital')?.value) || 0;
+    const riskPct = parseFloat(document.getElementById('rr-risk-pct')?.value) || 0;
+    const rr = parseFloat(document.getElementById('rr-ratio-input')?.value) || 2;
+    const entry = parseFloat(document.getElementById('rr-entry-price')?.value) || 0;
+    const sl = parseFloat(document.getElementById('rr-sl-price')?.value) || 0;
+    const lev = parseFloat(document.getElementById('rr-leverage')?.value) || loadAdminSettings().defaultLeverage || 10;
     const out = document.getElementById('rr-result-box');
     if (!out || entry <= 0 || sl <= 0 || entry === sl) {
       if (out) out.innerHTML = '<span class="text-rose-400">Enter valid Entry & Stop Loss prices.</span>';
@@ -356,12 +1117,17 @@
 
   window.openRRCalculatorWithSignal = function (sig) {
     const modal = document.getElementById('rr-calculator-modal');
-    modal.classList.remove('hidden');
-    modal.classList.add('flex');
+    if (modal) {
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
     if (sig) {
-      document.getElementById('rr-pair-label').textContent = `${sig.pair || sig.symbol} (${sig.assetClass || 'MARKET'})`;
-      document.getElementById('rr-entry-price').value = sig.entryPrice;
-      document.getElementById('rr-sl-price').value = sig.slPrice;
+      const lbl = document.getElementById('rr-pair-label');
+      const ent = document.getElementById('rr-entry-price');
+      const slEl = document.getElementById('rr-sl-price');
+      if (lbl) lbl.textContent = `${sig.pair || sig.symbol} (${sig.assetClass || 'MARKET'})`;
+      if (ent) ent.value = sig.entryPrice;
+      if (slEl) slEl.value = sig.slPrice;
     }
     calculateRR();
   };
@@ -369,8 +1135,6 @@
   // ---------------- AUTH & ADMIN PANEL ----------------
   function initAuth() {
     const form = document.getElementById('user-auth-form');
-    const tabLogin = document.getElementById('tab-login-mode-btn');
-    const tabSignup = document.getElementById('tab-signup-mode-btn');
     const nameWrap = document.getElementById('user-signup-name-wrap');
     const submitBtn = document.getElementById('user-submit-btn');
     const errEl = document.getElementById('user-auth-error-msg');
@@ -378,80 +1142,93 @@
 
     function setMode(signup) {
       isSignUpMode = signup;
-      errEl.classList.add('hidden');
-      okEl.classList.add('hidden');
-      nameWrap.classList.toggle('hidden', !signup);
-      submitBtn.textContent = signup ? 'SEND SIGN UP REQUEST TO ADMIN ⚡' : 'LOGIN TO NEURAL PLATFORM ⚡';
+      errEl?.classList.add('hidden');
+      okEl?.classList.add('hidden');
+      nameWrap?.classList.toggle('hidden', !signup);
+      if (submitBtn) submitBtn.textContent = signup ? 'SEND SIGN UP REQUEST TO ADMIN ⚡' : 'LOGIN TO NEURAL PLATFORM ⚡';
     }
 
-    tabLogin.addEventListener('click', () => setMode(false));
-    tabSignup.addEventListener('click', () => setMode(true));
+    on('tab-login-mode-btn', 'click', () => setMode(false));
+    on('tab-signup-mode-btn', 'click', () => setMode(true));
 
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      errEl.classList.add('hidden');
-      okEl.classList.add('hidden');
+    if (form) {
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        errEl?.classList.add('hidden');
+        okEl?.classList.add('hidden');
 
-      const name = document.getElementById('user-name-input').value.trim();
-      const identifier = document.getElementById('user-email-input').value.trim();
-      const password = document.getElementById('user-password-input').value.trim();
+        const name = (document.getElementById('user-name-input')?.value || '').trim();
+        const identifier = (document.getElementById('user-email-input')?.value || '').trim();
+        const password = (document.getElementById('user-password-input')?.value || '').trim();
 
-      try {
-        const baseUrl = window.NEURAL_CONFIG?.API_BASE_URL || '';
-        const endpoint = isSignUpMode ? '/api/auth/signup' : '/api/auth/login';
-        const resp = await fetch(`${baseUrl}${endpoint}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, identifier, password })
-        });
-        const data = await resp.json();
+        try {
+          const baseUrl = window.NEURAL_CONFIG?.API_BASE_URL || '';
+          const endpoint = isSignUpMode ? '/api/auth/signup' : '/api/auth/login';
+          const resp = await fetch(`${baseUrl}${endpoint}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, identifier, password })
+          });
+          const data = await resp.json();
 
-        if (!resp.ok || !data.ok) {
-          errEl.textContent = data.error || 'Authentication failed.';
-          errEl.classList.remove('hidden');
-          return;
+          if (!resp.ok || !data.ok) {
+            if (errEl) { errEl.textContent = data.error || 'Authentication failed.'; errEl.classList.remove('hidden'); }
+            return;
+          }
+
+          if (isSignUpMode) {
+            if (okEl) { okEl.textContent = data.message || 'Sign Up request sent to Admin!'; okEl.classList.remove('hidden'); }
+            form.reset();
+            setMode(false);
+            return;
+          }
+
+          unlockApp(data.user, data.role === 'admin');
+        } catch (_) {
+          if (!isSignUpMode && identifier.toLowerCase() === 'kavishkasithumina' && password.toLowerCase() === 'kavishka@1234') {
+            unlockApp({ name: 'kavishkasithumina', email: 'kavishkasithumina' }, true);
+            window.showToast('Direct Mode — Live Binance Prices Active!', '⚡');
+          } else if (errEl) {
+            errEl.textContent = 'Cannot reach Backend Server.';
+            errEl.classList.remove('hidden');
+          }
         }
+      });
+    }
 
-        if (isSignUpMode) {
-          okEl.textContent = data.message || 'Sign Up request sent to Admin!';
-          okEl.classList.remove('hidden');
-          form.reset();
-          setMode(false);
-          return;
-        }
-
-        unlockApp(data.user, data.role === 'admin');
-      } catch (_) {
-        if (!isSignUpMode && identifier.toLowerCase() === 'kavishkasithumina' && password.toLowerCase() === 'kavishka@1234') {
-          unlockApp({ name: 'kavishkasithumina', email: 'kavishkasithumina' }, true);
-          window.showToast('Offline Mode — Live Binance Prices Active!', '⚠️');
-        } else {
-          errEl.textContent = 'Cannot reach Backend Server.';
-          errEl.classList.remove('hidden');
-        }
-      }
-    });
-
-    document.getElementById('user-logout-btn').addEventListener('click', () => {
-      currentUser = null; isAdmin = false;
-      document.getElementById('protected-website-ui').classList.add('hidden');
-      document.getElementById('boot-intro-overlay').classList.remove('hidden', 'opacity-0', 'pointer-events-none');
-      document.getElementById('admin-panel').classList.add('hidden', 'translate-x-full');
+    on('user-logout-btn', 'click', () => {
+      currentUser = null;
+      isAdmin = false;
+      document.getElementById('protected-website-ui')?.classList.add('hidden');
+      document.getElementById('boot-intro-overlay')?.classList.remove('hidden', 'opacity-0', 'pointer-events-none');
+      document.getElementById('admin-panel')?.classList.add('hidden', 'translate-x-full');
+      const pill = document.getElementById('admin-quick-theme-pill');
+      if (pill) pill.style.display = 'none';
     });
   }
 
   function unlockApp(user, adminFlag) {
     currentUser = user;
     isAdmin = adminFlag;
-    document.getElementById('user-session-email').textContent = adminFlag ? 'ADMIN: kavishkasithumina' : `USER: ${user.name}`;
-    document.getElementById('admin-access-btn').classList.toggle('hidden', !adminFlag);
-    document.getElementById('admin-access-btn').classList.toggle('flex', adminFlag);
-    document.getElementById('protected-website-ui').classList.remove('hidden');
+    const sessEl = document.getElementById('user-session-email');
+    if (sessEl) sessEl.textContent = adminFlag ? 'ADMIN: kavishkasithumina' : `USER: ${user.name}`;
+    const adminBtn = document.getElementById('admin-access-btn');
+    if (adminBtn) {
+      adminBtn.classList.toggle('hidden', !adminFlag);
+      adminBtn.classList.toggle('flex', adminFlag);
+    }
+    document.getElementById('protected-website-ui')?.classList.remove('hidden');
     const gate = document.getElementById('boot-intro-overlay');
-    gate.classList.add('opacity-0', 'pointer-events-none');
-    setTimeout(() => gate.classList.add('hidden'), 400);
+    if (gate) {
+      gate.classList.add('opacity-0', 'pointer-events-none');
+      setTimeout(() => gate.classList.add('hidden'), 400);
+    }
 
-    if (adminFlag) loadAdminUsers();
+    if (adminFlag) {
+      mountAdminCommandCenter();
+      loadAdminUsers();
+    }
+    applyAdminVisualSettings(loadAdminSettings());
     syncLivePrices();
     window.showToast(`Welcome ${user.name} — Live Market Synced!`, '⚡');
   }
@@ -463,6 +1240,7 @@
       const data = await resp.json();
       if (!data.ok) return;
       const list = document.getElementById('admin-users-list');
+      if (!list) return;
       list.innerHTML = data.users.map((u, idx) => `
         <div class="p-2 rounded-xl bg-slate-950/85 border border-cyan-500/25 space-y-1 text-[10px]">
           <div class="flex justify-between">
@@ -489,101 +1267,97 @@
     });
     loadAdminUsers();
   };
+
   window.__adminDelUser = async (idx) => {
     const baseUrl = window.NEURAL_CONFIG?.API_BASE_URL || '';
     await fetch(`${baseUrl}/api/auth/admin/users/${idx}`, { method: 'DELETE' });
     loadAdminUsers();
   };
 
-  // ---------------- BOOTSTRAP EVERYTHING ----------------
+  // ---------------- BOOTSTRAP EVERYTHING (CRASH-PROOF) ----------------
   window.addEventListener('load', () => {
+    injectThemeCss();
     initAuth();
-    window.NeuralCanvasEngine.init((idx) => window.__openChartModal(idx));
-    window.NeuralChartVision.init();
-    window.NeuralPnlManager.wireControls();
-    window.NeuralPnlManager.load();
 
-    window.NeuralTabManager.makeDraggable(document.getElementById('hud-wrapper-tab'), {
-      resetBtnSelector: '.tab-reset-pos-btn', minimizeBtnSelector: '.tab-minimize-btn', bodySelector: '#hud-tab-body',
-      defaultTop: '16px', defaultLeft: '16px'
-    });
-    window.NeuralTabManager.makeDraggable(document.getElementById('btc-trend-summary-widget'), {
-      resetBtnSelector: '.tab-reset-pos-btn', minimizeBtnSelector: '.tab-minimize-btn', bodySelector: '#btc-summary-body',
-      defaultTop: '94px', defaultLeft: '16px'
-    });
-    window.NeuralTabManager.makeDraggable(document.getElementById('tv-chart-vision-widget'), {
-      resetBtnSelector: '.tab-reset-pos-btn', minimizeBtnSelector: '.tab-minimize-btn', bodySelector: '#vision-widget-body',
-      defaultTop: '94px', defaultLeft: '440px'
-    });
-    window.NeuralTabManager.makeDraggable(document.getElementById('daily-trading-summary-widget'), {
-      resetBtnSelector: '#pnl-reset-pos-btn', minimizeBtnSelector: '#toggle-daily-summary-btn', bodySelector: '#daily-summary-body',
-      defaultTop: '64px', defaultRight: '16px'
-    });
-    window.NeuralTabManager.makeDraggable(document.getElementById('asset-terminal-card'), {
-      resetBtnSelector: '#reset-card-pos-btn', minimizeBtnSelector: '#term-minimize-tab-btn', bodySelector: '#term-collapsible-body',
-      defaultBottom: '16px', defaultLeft: '16px'
-    });
-    window.NeuralTabManager.makeDraggable(document.getElementById('signal-alert-banner'), {
-      defaultTop: '16px', defaultLeft: '50%', defaultTransform: 'translateX(-50%)'
-    });
+    try { window.NeuralCanvasEngine?.init((idx) => window.__openChartModal(idx)); } catch (_) {}
+    try { window.NeuralChartVision?.init(); } catch (_) {}
+    try { window.NeuralPnlManager?.wireControls(); window.NeuralPnlManager?.load(); } catch (_) {}
 
-    document.getElementById('quick-fire-signal-btn').addEventListener('click', generateNearEntrySignal);
-    document.getElementById('term-generate-signal-btn').addEventListener('click', generateNearEntrySignal);
-    document.getElementById('term-open-chart-btn').addEventListener('click', () => window.__openChartModal(window.NeuralCanvasEngine.getSelectedIndex()));
-    document.getElementById('term-copy-symbol-btn').addEventListener('click', () => window.copyCoinSymbolToClipboard(document.getElementById('term-symbol').textContent));
-    document.getElementById('close-chart-modal-btn').addEventListener('click', () => {
-      if (window.TVPositionChart) window.TVPositionChart.close();
-      document.getElementById('coin-chart-modal').classList.add('hidden');
-      document.getElementById('coin-chart-modal').classList.remove('flex');
+    const drag = (id, opts) => {
+      const el = document.getElementById(id);
+      if (el && window.NeuralTabManager?.makeDraggable) window.NeuralTabManager.makeDraggable(el, opts);
+    };
+    drag('hud-wrapper-tab', { resetBtnSelector: '.tab-reset-pos-btn', minimizeBtnSelector: '.tab-minimize-btn', bodySelector: '#hud-tab-body', defaultTop: '16px', defaultLeft: '16px' });
+    drag('btc-trend-summary-widget', { resetBtnSelector: '.tab-reset-pos-btn', minimizeBtnSelector: '.tab-minimize-btn', bodySelector: '#btc-summary-body', defaultTop: '94px', defaultLeft: '16px' });
+    drag('tv-chart-vision-widget', { resetBtnSelector: '.tab-reset-pos-btn', minimizeBtnSelector: '.tab-minimize-btn', bodySelector: '#vision-widget-body', defaultTop: '94px', defaultLeft: '440px' });
+    drag('daily-trading-summary-widget', { resetBtnSelector: '#pnl-reset-pos-btn', minimizeBtnSelector: '#toggle-daily-summary-btn', bodySelector: '#daily-summary-body', defaultTop: '64px', defaultRight: '16px' });
+    drag('asset-terminal-card', { resetBtnSelector: '#reset-card-pos-btn', minimizeBtnSelector: '#term-minimize-tab-btn', bodySelector: '#term-collapsible-body', defaultBottom: '16px', defaultLeft: '16px' });
+    drag('signal-alert-banner', { defaultTop: '16px', defaultLeft: '50%', defaultTransform: 'translateX(-50%)' });
+
+    on('quick-fire-signal-btn', 'click', generateNearEntrySignal);
+    on('term-generate-signal-btn', 'click', generateNearEntrySignal);
+    on('term-open-chart-btn', 'click', () => window.__openChartModal(window.NeuralCanvasEngine?.getSelectedIndex?.() || 0));
+    on('term-copy-symbol-btn', 'click', () => window.copyCoinSymbolToClipboard(document.getElementById('term-symbol')?.textContent));
+    on('close-chart-modal-btn', 'click', () => {
+      window.TVPositionChart?.close?.();
+      document.getElementById('coin-chart-modal')?.classList.add('hidden');
+      document.getElementById('coin-chart-modal')?.classList.remove('flex');
     });
-    document.getElementById('open-rr-calc-btn').addEventListener('click', () => {
-      const n = window.NeuralCanvasEngine.getNodes()[window.NeuralCanvasEngine.getSelectedIndex()];
-      window.openRRCalculatorWithSignal(n?.lastSignal || { pair: n?.asset?.symbol, entryPrice: n?.asset?.price, slPrice: n?.asset?.price * 0.99 });
+    on('open-rr-calc-btn', 'click', () => {
+      const n = window.NeuralCanvasEngine?.getNodes?.()[window.NeuralCanvasEngine?.getSelectedIndex?.() || 0];
+      window.openRRCalculatorWithSignal(n?.lastSignal || { pair: n?.asset?.symbol, entryPrice: n?.asset?.price, slPrice: (n?.asset?.price || 100) * 0.99 });
     });
-    document.getElementById('close-rr-calc-modal-btn').addEventListener('click', () => {
-      document.getElementById('rr-calculator-modal').classList.add('hidden');
-      document.getElementById('rr-calculator-modal').classList.remove('flex');
+    on('close-rr-calc-modal-btn', 'click', () => {
+      document.getElementById('rr-calculator-modal')?.classList.add('hidden');
+      document.getElementById('rr-calculator-modal')?.classList.remove('flex');
     });
     ['rr-capital', 'rr-risk-pct', 'rr-ratio-input', 'rr-entry-price', 'rr-sl-price', 'rr-leverage'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.addEventListener('input', calculateRR);
+      on(id, 'input', calculateRR);
     });
-
-    document.getElementById('quick-open-vision-btn').addEventListener('click', () => {
-      const body = document.getElementById('vision-widget-body');
-      if (body) body.classList.remove('hidden');
+    on('quick-open-vision-btn', 'click', () => {
+      document.getElementById('vision-widget-body')?.classList.remove('hidden');
       window.showToast('TradingView Chart AI Vision Ready — Upload or Ctrl+V!', '📷');
     });
 
     const adminPanel = document.getElementById('admin-panel');
-    document.getElementById('admin-access-btn').addEventListener('click', () => {
+    on('admin-access-btn', 'click', () => {
+      if (!adminPanel) return;
+      mountAdminCommandCenter();
       adminPanel.classList.remove('hidden');
       adminPanel.classList.add('flex');
       adminPanel.classList.toggle('translate-x-full');
       loadAdminUsers();
     });
-    document.getElementById('collapse-admin-btn').addEventListener('click', () => adminPanel.classList.add('translate-x-full'));
-    document.getElementById('admin-create-user-btn').addEventListener('click', async () => {
-      const email = document.getElementById('admin-new-user-email').value.trim();
-      const password = document.getElementById('admin-new-user-pass').value.trim();
+    on('collapse-admin-btn', 'click', () => adminPanel?.classList.add('translate-x-full'));
+    on('admin-create-user-btn', 'click', async () => {
+      const emailEl = document.getElementById('admin-new-user-email');
+      const passEl = document.getElementById('admin-new-user-pass');
+      const email = (emailEl?.value || '').trim();
+      const password = (passEl?.value || '').trim();
       if (!email || !password) return;
       const baseUrl = window.NEURAL_CONFIG?.API_BASE_URL || '';
       await fetch(`${baseUrl}/api/auth/admin/users`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password })
       });
-      document.getElementById('admin-new-user-email').value = '';
-      document.getElementById('admin-new-user-pass').value = '';
+      if (emailEl) emailEl.value = '';
+      if (passEl) passEl.value = '';
       loadAdminUsers();
       window.showToast(`Approved user: ${email}`, '✅');
     });
+
+    applyTheme(activeTheme, true);
+    applyAdminVisualSettings(loadAdminSettings());
+    setupAutoSignalTimer(loadAdminSettings().autoSignalSec);
 
     syncLivePrices();
     syncNewsFromBackend();
     setInterval(syncLivePrices, 5000);
     setInterval(syncNewsFromBackend, 45000);
     setInterval(() => {
-      window.NeuralPnlManager.checkMidnightReset();
-      window.NeuralPnlManager.evaluateNearEntriesAndOpenTrades();
+      try {
+        window.NeuralPnlManager?.checkMidnightReset();
+        window.NeuralPnlManager?.evaluateNearEntriesAndOpenTrades();
+      } catch (_) {}
     }, 1000);
   });
 })();
