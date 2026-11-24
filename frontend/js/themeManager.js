@@ -1,5 +1,6 @@
 /**
- * ADMIN-ONLY THEME STUDIO (10 THEMES + CRYPTO BUBBLES PHYSICS ENGINE)
+ * ADMIN-ONLY THEME MANAGER (10 THEMES + CRYPTO BUBBLES PHYSICS ENGINE)
+ * Directly renders a visible "THEMES" section inside #admin-panel for Admin users.
  */
 window.NeuralThemeManager = (function () {
   const STORAGE_KEY = 'neural_ai_active_theme';
@@ -11,194 +12,151 @@ window.NeuralThemeManager = (function () {
   let hoveredIdx = -1;
 
   const THEMES = [
-    {
-      id: 'neural_default',
-      name: '🧠 Neural Cortex',
-      desc: 'Default Organic Network',
-      badge: '#22d3ee',
-      isBubbles: false,
-      css: ''
-    },
+    { id: 'neural_default', name: '🧠 Neural Cortex', desc: 'Default Network', badge: '#22d3ee', isBubbles: false, css: '' },
     {
       id: 'crypto_bubbles',
       name: '🫧 Crypto Bubbles',
-      desc: 'Live Floating Physics Bubbles',
+      desc: 'Live Bubbles',
       badge: '#34d399',
       isBubbles: true,
-      css: `
-        body[data-neural-theme="crypto_bubbles"] {
-          background: radial-gradient(circle at 50% 35%, #07192b 0%, #02060c 100%) !important;
-        }
-      `
+      css: `body[data-neural-theme="crypto_bubbles"] { background: radial-gradient(circle at 50% 35%, #07192b 0%, #02060c 100%) !important; }`
     },
     {
       id: 'cyberpunk_neon',
       name: '⚡ Cyberpunk Neon',
-      desc: 'Magenta & Cyan Neon Glass',
+      desc: 'Magenta & Cyan',
       badge: '#f472b6',
       isBubbles: false,
       css: `
-        body[data-neural-theme="cyberpunk_neon"] {
-          background: radial-gradient(circle at 20% 20%, #2e0647 0%, #070212 72%) !important;
-        }
+        body[data-neural-theme="cyberpunk_neon"] { background: radial-gradient(circle at 20% 20%, #2e0647 0%, #070212 72%) !important; }
         body[data-neural-theme="cyberpunk_neon"] #protected-website-ui [id$="-widget"],
         body[data-neural-theme="cyberpunk_neon"] #protected-website-ui #asset-terminal-card,
-        body[data-neural-theme="cyberpunk_neon"] #protected-website-ui #hud-wrapper-tab,
-        body[data-neural-theme="cyberpunk_neon"] #coin-chart-modal > div,
-        body[data-neural-theme="cyberpunk_neon"] #rr-calculator-modal > div {
-          background: rgba(20, 6, 36, 0.84) !important;
+        body[data-neural-theme="cyberpunk_neon"] #protected-website-ui #hud-wrapper-tab {
+          background: rgba(20, 6, 36, 0.86) !important;
           border-color: rgba(236, 72, 153, 0.75) !important;
-          box-shadow: 0 0 26px rgba(236, 72, 153, 0.32), inset 0 0 14px rgba(34, 211, 238, 0.16) !important;
+          box-shadow: 0 0 24px rgba(236, 72, 153, 0.3) !important;
         }
       `
     },
     {
       id: 'obsidian_gold',
       name: '👑 Obsidian Gold',
-      desc: 'Institutional Black & Gold',
+      desc: 'Black & Gold',
       badge: '#fbbf24',
       isBubbles: false,
       css: `
-        body[data-neural-theme="obsidian_gold"] {
-          background: radial-gradient(circle at 50% 20%, #2b1e05 0%, #060401 75%) !important;
-        }
+        body[data-neural-theme="obsidian_gold"] { background: radial-gradient(circle at 50% 20%, #2b1e05 0%, #060401 75%) !important; }
         body[data-neural-theme="obsidian_gold"] #protected-website-ui [id$="-widget"],
         body[data-neural-theme="obsidian_gold"] #protected-website-ui #asset-terminal-card,
-        body[data-neural-theme="obsidian_gold"] #protected-website-ui #hud-wrapper-tab,
-        body[data-neural-theme="obsidian_gold"] #coin-chart-modal > div,
-        body[data-neural-theme="obsidian_gold"] #rr-calculator-modal > div {
-          background: rgba(24, 17, 4, 0.86) !important;
+        body[data-neural-theme="obsidian_gold"] #protected-website-ui #hud-wrapper-tab {
+          background: rgba(24, 17, 4, 0.88) !important;
           border-color: rgba(245, 158, 11, 0.75) !important;
-          box-shadow: 0 0 26px rgba(245, 158, 11, 0.28), inset 0 0 12px rgba(251, 191, 36, 0.12) !important;
+          box-shadow: 0 0 24px rgba(245, 158, 11, 0.28) !important;
         }
       `
     },
     {
       id: 'matrix_terminal',
       name: '💚 Matrix Terminal',
-      desc: 'Emerald Quant Terminal',
+      desc: 'Emerald Quant',
       badge: '#10b981',
       isBubbles: false,
       css: `
-        body[data-neural-theme="matrix_terminal"] {
-          background: radial-gradient(circle at 50% 50%, #032b15 0%, #010905 80%) !important;
-        }
+        body[data-neural-theme="matrix_terminal"] { background: radial-gradient(circle at 50% 50%, #032b15 0%, #010905 80%) !important; }
         body[data-neural-theme="matrix_terminal"] #protected-website-ui [id$="-widget"],
         body[data-neural-theme="matrix_terminal"] #protected-website-ui #asset-terminal-card,
-        body[data-neural-theme="matrix_terminal"] #protected-website-ui #hud-wrapper-tab,
-        body[data-neural-theme="matrix_terminal"] #coin-chart-modal > div,
-        body[data-neural-theme="matrix_terminal"] #rr-calculator-modal > div {
-          background: rgba(3, 24, 12, 0.86) !important;
+        body[data-neural-theme="matrix_terminal"] #protected-website-ui #hud-wrapper-tab {
+          background: rgba(3, 24, 12, 0.88) !important;
           border-color: rgba(16, 185, 129, 0.75) !important;
-          box-shadow: 0 0 24px rgba(16, 185, 129, 0.28) !important;
+          box-shadow: 0 0 22px rgba(16, 185, 129, 0.28) !important;
         }
       `
     },
     {
       id: 'liquid_aurora',
       name: '🌌 Liquid Aurora',
-      desc: 'Violet & Teal Northern Glow',
+      desc: 'Violet & Teal',
       badge: '#a78bfa',
       isBubbles: false,
       css: `
-        body[data-neural-theme="liquid_aurora"] {
-          background: linear-gradient(135deg, #09223b 0%, #220c42 52%, #052e29 100%) !important;
-        }
+        body[data-neural-theme="liquid_aurora"] { background: linear-gradient(135deg, #09223b 0%, #220c42 52%, #052e29 100%) !important; }
         body[data-neural-theme="liquid_aurora"] #protected-website-ui [id$="-widget"],
         body[data-neural-theme="liquid_aurora"] #protected-website-ui #asset-terminal-card,
-        body[data-neural-theme="liquid_aurora"] #protected-website-ui #hud-wrapper-tab,
-        body[data-neural-theme="liquid_aurora"] #coin-chart-modal > div,
-        body[data-neural-theme="liquid_aurora"] #rr-calculator-modal > div {
-          background: rgba(12, 14, 36, 0.84) !important;
+        body[data-neural-theme="liquid_aurora"] #protected-website-ui #hud-wrapper-tab {
+          background: rgba(12, 14, 36, 0.86) !important;
           border-color: rgba(139, 92, 246, 0.72) !important;
-          box-shadow: 0 0 28px rgba(45, 212, 191, 0.24), inset 0 0 14px rgba(139, 92, 246, 0.16) !important;
+          box-shadow: 0 0 26px rgba(45, 212, 191, 0.24) !important;
         }
       `
     },
     {
       id: 'crimson_inferno',
       name: '🌋 Crimson Inferno',
-      desc: 'Blood Red & Lava Dark',
+      desc: 'Blood Red & Lava',
       badge: '#fb7185',
       isBubbles: false,
       css: `
-        body[data-neural-theme="crimson_inferno"] {
-          background: radial-gradient(circle at 50% 30%, #3b0711 0%, #090204 78%) !important;
-        }
+        body[data-neural-theme="crimson_inferno"] { background: radial-gradient(circle at 50% 30%, #3b0711 0%, #090204 78%) !important; }
         body[data-neural-theme="crimson_inferno"] #protected-website-ui [id$="-widget"],
         body[data-neural-theme="crimson_inferno"] #protected-website-ui #asset-terminal-card,
-        body[data-neural-theme="crimson_inferno"] #protected-website-ui #hud-wrapper-tab,
-        body[data-neural-theme="crimson_inferno"] #coin-chart-modal > div,
-        body[data-neural-theme="crimson_inferno"] #rr-calculator-modal > div {
-          background: rgba(28, 5, 10, 0.86) !important;
+        body[data-neural-theme="crimson_inferno"] #protected-website-ui #hud-wrapper-tab {
+          background: rgba(28, 5, 10, 0.88) !important;
           border-color: rgba(244, 63, 94, 0.78) !important;
-          box-shadow: 0 0 26px rgba(244, 63, 94, 0.30), inset 0 0 12px rgba(251, 146, 60, 0.14) !important;
+          box-shadow: 0 0 24px rgba(244, 63, 94, 0.3) !important;
         }
       `
     },
     {
       id: 'arctic_frost',
       name: '❄️ Arctic Frost',
-      desc: 'Icy Glacier Liquid Glass',
+      desc: 'Glacier Blue',
       badge: '#7dd3fc',
       isBubbles: false,
       css: `
-        body[data-neural-theme="arctic_frost"] {
-          background: radial-gradient(circle at 50% 20%, #0d324d 0%, #040e1a 80%) !important;
-        }
+        body[data-neural-theme="arctic_frost"] { background: radial-gradient(circle at 50% 20%, #0d324d 0%, #040e1a 80%) !important; }
         body[data-neural-theme="arctic_frost"] #protected-website-ui [id$="-widget"],
         body[data-neural-theme="arctic_frost"] #protected-website-ui #asset-terminal-card,
-        body[data-neural-theme="arctic_frost"] #protected-website-ui #hud-wrapper-tab,
-        body[data-neural-theme="arctic_frost"] #coin-chart-modal > div,
-        body[data-neural-theme="arctic_frost"] #rr-calculator-modal > div {
-          background: rgba(7, 24, 42, 0.84) !important;
+        body[data-neural-theme="arctic_frost"] #protected-website-ui #hud-wrapper-tab {
+          background: rgba(7, 24, 42, 0.86) !important;
           border-color: rgba(125, 211, 252, 0.78) !important;
-          box-shadow: 0 0 26px rgba(56, 189, 248, 0.28), inset 0 0 16px rgba(224, 242, 254, 0.14) !important;
+          box-shadow: 0 0 24px rgba(56, 189, 248, 0.28) !important;
         }
       `
     },
     {
       id: 'synthwave_80s',
       name: '🌆 Synthwave 80s',
-      desc: 'Retro Sunset Purple & Orange',
+      desc: 'Sunset Retro',
       badge: '#fb923c',
       isBubbles: false,
       css: `
-        body[data-neural-theme="synthwave_80s"] {
-          background: linear-gradient(160deg, #240947 0%, #3d0e4c 52%, #3b150a 100%) !important;
-        }
+        body[data-neural-theme="synthwave_80s"] { background: linear-gradient(160deg, #240947 0%, #3d0e4c 52%, #3b150a 100%) !important; }
         body[data-neural-theme="synthwave_80s"] #protected-website-ui [id$="-widget"],
         body[data-neural-theme="synthwave_80s"] #protected-website-ui #asset-terminal-card,
-        body[data-neural-theme="synthwave_80s"] #protected-website-ui #hud-wrapper-tab,
-        body[data-neural-theme="synthwave_80s"] #coin-chart-modal > div,
-        body[data-neural-theme="synthwave_80s"] #rr-calculator-modal > div {
-          background: rgba(26, 8, 38, 0.86) !important;
+        body[data-neural-theme="synthwave_80s"] #protected-website-ui #hud-wrapper-tab {
+          background: rgba(26, 8, 38, 0.88) !important;
           border-color: rgba(251, 146, 60, 0.72) !important;
-          box-shadow: 0 0 26px rgba(192, 38, 211, 0.28), inset 0 0 14px rgba(251, 146, 60, 0.14) !important;
+          box-shadow: 0 0 24px rgba(192, 38, 211, 0.28) !important;
         }
       `
     },
     {
       id: 'diamond_rgb',
       name: '💎 Diamond RGB',
-      desc: 'Animated RGB Liquid Glow',
+      desc: 'Animated RGB',
       badge: '#e879f9',
       isBubbles: false,
       css: `
         @keyframes neuralRgbBorder {
-          0%   { border-color: rgba(34, 211, 238, 0.88); box-shadow: 0 0 24px rgba(34, 211, 238, 0.34); }
-          33%  { border-color: rgba(192, 132, 252, 0.88); box-shadow: 0 0 24px rgba(192, 132, 252, 0.34); }
-          66%  { border-color: rgba(52, 211, 153, 0.88); box-shadow: 0 0 24px rgba(52, 211, 153, 0.34); }
-          100% { border-color: rgba(34, 211, 238, 0.88); box-shadow: 0 0 24px rgba(34, 211, 238, 0.34); }
+          0%   { border-color: rgba(34, 211, 238, 0.88); box-shadow: 0 0 22px rgba(34, 211, 238, 0.34); }
+          33%  { border-color: rgba(192, 132, 252, 0.88); box-shadow: 0 0 22px rgba(192, 132, 252, 0.34); }
+          66%  { border-color: rgba(52, 211, 153, 0.88); box-shadow: 0 0 22px rgba(52, 211, 153, 0.34); }
+          100% { border-color: rgba(34, 211, 238, 0.88); box-shadow: 0 0 22px rgba(34, 211, 238, 0.34); }
         }
-        body[data-neural-theme="diamond_rgb"] {
-          background: radial-gradient(circle at 50% 40%, #121b36 0%, #03050a 80%) !important;
-        }
+        body[data-neural-theme="diamond_rgb"] { background: radial-gradient(circle at 50% 40%, #121b36 0%, #03050a 80%) !important; }
         body[data-neural-theme="diamond_rgb"] #protected-website-ui [id$="-widget"],
         body[data-neural-theme="diamond_rgb"] #protected-website-ui #asset-terminal-card,
-        body[data-neural-theme="diamond_rgb"] #protected-website-ui #hud-wrapper-tab,
-        body[data-neural-theme="diamond_rgb"] #coin-chart-modal > div,
-        body[data-neural-theme="diamond_rgb"] #rr-calculator-modal > div {
+        body[data-neural-theme="diamond_rgb"] #protected-website-ui #hud-wrapper-tab {
           animation: neuralRgbBorder 4.5s linear infinite !important;
         }
       `
@@ -389,137 +347,72 @@ window.NeuralThemeManager = (function () {
     document.querySelectorAll('.admin-theme-btn').forEach(btn => {
       const active = btn.dataset.themeId === activeTheme;
       btn.style.borderColor = active ? found.badge : 'rgba(148, 163, 184, 0.25)';
-      btn.style.background = active ? 'rgba(30, 41, 59, 0.96)' : 'rgba(15, 23, 42, 0.82)';
-      btn.style.boxShadow = active ? `0 0 12px ${found.badge}44` : 'none';
+      btn.style.background = active ? 'rgba(30, 41, 59, 0.96)' : 'rgba(15, 23, 42, 0.85)';
+      btn.style.boxShadow = active ? `0 0 10px ${found.badge}44` : 'none';
     });
-
-    const activeLabel = document.getElementById('admin-active-theme-label');
-    if (activeLabel) activeLabel.textContent = found.name;
 
     if (!silent && window.showToast) {
-      window.showToast(`Theme Applied: ${found.name}`, '🎨');
+      window.showToast(`Theme: ${found.name}`, '🎨');
     }
   }
 
-  function buildThemeGridHtml() {
-    return THEMES.map(t => `
-      <button type="button" data-theme-id="${t.id}" class="admin-theme-btn"
-        style="text-align:left; padding:8px; border-radius:8px; border:1px solid rgba(148,163,184,0.25); background:rgba(15,23,42,0.82); cursor:pointer; transition:all 0.15s ease;">
-        <div style="display:flex; align-items:center; justify-content:space-between; gap:4px;">
-          <span style="font-size:10px; font-weight:800; color:#ffffff;">${t.name}</span>
-          <span style="width:8px; height:8px; border-radius:999px; background:${t.badge}; display:inline-block;"></span>
-        </div>
-        <div style="font-size:8px; color:rgba(203,213,225,0.75); margin-top:2px;">${t.desc}</div>
-      </button>
-    `).join('');
-  }
-
-  function wireThemeButtons(container) {
-    container.querySelectorAll('.admin-theme-btn').forEach(btn => {
-      btn.addEventListener('click', () => applyTheme(btn.dataset.themeId));
-    });
-  }
-
-  function isAdminSessionActive() {
-    const adminBtn = document.getElementById('admin-access-btn');
-    const sessionTxt = (document.getElementById('user-session-email')?.textContent || '').toUpperCase();
-    return Boolean((adminBtn && !adminBtn.classList.contains('hidden')) || sessionTxt.includes('ADMIN'));
-  }
-
-  function createAdminFloatingStudio() {
-    if (document.getElementById('admin-floating-theme-btn')) return;
-
-    const btn = document.createElement('button');
-    btn.id = 'admin-floating-theme-btn';
-    btn.type = 'button';
-    btn.innerHTML = `<span>🎨</span><span>THEMES (10)</span>`;
-    btn.style.cssText = [
-      'position:fixed', 'bottom:18px', 'right:18px', 'z-index:9990',
-      'display:none', 'align-items:center', 'gap:6px',
-      'padding:9px 14px', 'border-radius:999px',
-      'background:rgba(8,18,32,0.94)', 'backdrop-filter:blur(12px)',
-      'border:1px solid rgba(34,211,238,0.7)', 'color:#67e8f9',
-      'font-family:"JetBrains Mono",monospace', 'font-size:11px', 'font-weight:800',
-      'box-shadow:0 0 22px rgba(34,211,238,0.35)', 'cursor:pointer'
-    ].join(';');
-    document.body.appendChild(btn);
-
-    const modal = document.createElement('div');
-    modal.id = 'admin-theme-studio-modal';
-    modal.style.cssText = [
-      'position:fixed', 'bottom:64px', 'right:18px', 'z-index:9995',
-      'width:330px', 'max-height:76vh', 'overflow-y:auto',
-      'display:none', 'padding:14px', 'border-radius:14px',
-      'background:rgba(5,12,24,0.97)', 'backdrop-filter:blur(16px)',
-      'border:1px solid rgba(34,211,238,0.6)',
-      'box-shadow:0 12px 40px rgba(0,0,0,0.8)',
-      'font-family:"JetBrains Mono",monospace'
-    ].join(';');
-
-    modal.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-        <div>
-          <div style="font-size:11px; font-weight:800; color:#67e8f9;">🎨 ADMIN THEME STUDIO (10)</div>
-          <div style="font-size:9px; color:#94a3b8;">Active: <span id="admin-active-theme-label" style="color:#34d399; font-weight:700;">-</span></div>
-        </div>
-        <button type="button" id="close-theme-studio-btn" style="background:rgba(244,63,94,0.15); border:1px solid rgba(244,63,94,0.4); border-radius:6px; color:#fda4af; font-weight:800; cursor:pointer; padding:2px 8px; font-size:12px;">✕</button>
-      </div>
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:7px;">
-        ${buildThemeGridHtml()}
-      </div>
-    `;
-    document.body.appendChild(modal);
-    wireThemeButtons(modal);
-
-    btn.addEventListener('click', () => {
-      modal.style.display = modal.style.display === 'none' ? 'block' : 'none';
-      applyTheme(activeTheme, true);
-    });
-    modal.querySelector('#close-theme-studio-btn').addEventListener('click', () => {
-      modal.style.display = 'none';
-    });
-
-    const syncAdminVisibility = () => {
-      const allowed = isAdminSessionActive();
-      btn.style.display = allowed ? 'flex' : 'none';
-      if (!allowed) modal.style.display = 'none';
-    };
-    setInterval(syncAdminVisibility, 600);
-    syncAdminVisibility();
-  }
-
-  function injectInsideAdminPanel() {
+  // Always renders a clean "THEMES" section directly inside #admin-panel
+  function mountThemesSectionInAdminPanel() {
     const adminPanel = document.getElementById('admin-panel');
-    if (!adminPanel || document.getElementById('admin-theme-switcher-box')) return;
+    if (!adminPanel) return;
 
-    const box = document.createElement('div');
-    box.id = 'admin-theme-switcher-box';
-    box.style.cssText = 'padding:10px; border-radius:12px; background:rgba(2,6,23,0.94); border:1px solid rgba(34,211,238,0.45); margin-bottom:10px; font-family:"JetBrains Mono",monospace;';
-    box.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-        <span style="font-size:10px; font-weight:800; color:#67e8f9;">🎨 ADMIN THEMES (10)</span>
-        <span style="font-size:8px; padding:2px 6px; border-radius:4px; background:rgba(245,158,11,0.2); color:#fcd34d; font-weight:700;">ADMIN ONLY</span>
-      </div>
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
-        ${buildThemeGridHtml()}
-      </div>
-    `;
+    adminPanel.style.overflowY = 'auto';
 
-    const usersList = document.getElementById('admin-users-list');
-    if (usersList && usersList.parentElement) {
-      usersList.parentElement.insertBefore(box, usersList);
-    } else {
-      adminPanel.appendChild(box);
+    let section = document.getElementById('admin-themes-section');
+    if (!section) {
+      section = document.createElement('section');
+      section.id = 'admin-themes-section';
+      section.style.cssText = [
+        'display:block', 'visibility:visible', 'opacity:1',
+        'margin:10px 0', 'padding:10px', 'border-radius:12px',
+        'background:rgba(2, 6, 23, 0.95)',
+        'border:1px solid rgba(34, 211, 238, 0.45)',
+        'font-family:"JetBrains Mono", monospace'
+      ].join(';');
+
+      section.innerHTML = `
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+          <h3 style="margin:0; font-size:11px; font-weight:800; color:#67e8f9; letter-spacing:0.06em;">THEMES</h3>
+          <span style="font-size:8px; padding:2px 6px; border-radius:4px; background:rgba(245,158,11,0.2); color:#fcd34d; font-weight:700;">ADMIN</span>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+          ${THEMES.map(t => `
+            <button type="button" data-theme-id="${t.id}" class="admin-theme-btn"
+              style="display:block; text-align:left; padding:7px 8px; border-radius:8px; border:1px solid rgba(148,163,184,0.25); background:rgba(15,23,42,0.85); cursor:pointer;">
+              <div style="font-size:10px; font-weight:800; color:#ffffff;">${t.name}</div>
+              <div style="font-size:8px; color:#94a3b8; margin-top:2px;">${t.desc}</div>
+            </button>
+          `).join('')}
+        </div>
+      `;
+
+      // Place right after header / near top of #admin-panel so it's immediately visible
+      const firstChild = adminPanel.firstElementChild;
+      if (firstChild && firstChild.nextElementSibling) {
+        adminPanel.insertBefore(section, firstChild.nextElementSibling);
+      } else {
+        adminPanel.prepend(section);
+      }
+
+      section.querySelectorAll('.admin-theme-btn').forEach(btn => {
+        btn.addEventListener('click', () => applyTheme(btn.dataset.themeId));
+      });
     }
-    wireThemeButtons(box);
+
+    section.style.display = 'block';
   }
 
   window.addEventListener('load', () => {
     injectThemeStyles();
-    createAdminFloatingStudio();
-    injectInsideAdminPanel();
-    setTimeout(() => applyTheme(activeTheme, true), 450);
+    mountThemesSectionInAdminPanel();
+    setInterval(mountThemesSectionInAdminPanel, 1500);
+    setTimeout(() => applyTheme(activeTheme, true), 400);
   });
 
-  return { applyTheme, getActiveTheme: () => activeTheme };
+  return { applyTheme, getActiveTheme: () => activeTheme, mountThemesSectionInAdminPanel };
 })();
