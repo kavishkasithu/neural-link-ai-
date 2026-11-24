@@ -1,5 +1,5 @@
 /**
- * MAIN FRONTEND APPLICATION CONTROLLER
+ * MAIN FRONTEND APPLICATION CONTROLLER (FIXED & CRASH-PROOF)
  * Includes: Pair-Locked AI Signal Lifecycle (1 Active Signal per Pair until TP/SL Hit),
  * Real-Time Auto TP/SL Hit Monitor & Auto Summary Panel,
  * Live TradingView Login Chart (BTC + Main Forex Pairs), Binance-API-Key Live Ticker,
@@ -11,7 +11,9 @@
   let isAdmin = false;
   let isSignUpMode = false;
   let hasActiveSignal = false;
+  let recentSymbols = [];
   let autoSignalTimer = null;
+  let appBooted = false;
 
   const THEME_STORAGE_KEY = 'neural_ai_active_theme';
   const GLASS_STORAGE_KEY = 'neural_ai_user_glass_opacity';
@@ -172,7 +174,6 @@
     const key = normalizeSymbolKey(sig.binanceSymbol || sig.symbol || sig.pair);
     if (!key) return { ok: false, reason: 'INVALID_SYMBOL' };
 
-    // Strict Rule: Block duplicate signal if this pair already has an active OPEN trade
     if (lifecycleState.activeByKey[key]) {
       return { ok: false, reason: 'PAIR_LOCKED', existing: lifecycleState.activeByKey[key] };
     }
@@ -183,9 +184,7 @@
     const sl = Number(sig.slPrice);
     if (!entry || !tp1 || !sl) return { ok: false, reason: 'INVALID_PRICES' };
 
-    const isLong = sig.isLong !== undefined
-      ? Boolean(sig.isLong)
-      : (tp1 > entry);
+    const isLong = sig.isLong !== undefined ? Boolean(sig.isLong) : (tp1 > entry);
 
     const record = {
       id: `${key}_${Date.now()}`,
@@ -221,7 +220,7 @@
 
     const closed = {
       ...trade,
-      status: outcome, // 'TP HIT' | 'SL HIT' | 'CLOSED'
+      status: outcome,
       exitPrice,
       pnlPct: Number(pnlPct.toFixed(2)),
       closedAt: Date.now()
@@ -234,14 +233,10 @@
     }
     saveLifecycleState();
 
-    // Unlock node visual reference
     const nodes = window.NeuralCanvasEngine ? window.NeuralCanvasEngine.getNodes() : [];
     const node = nodes.find(n => n.asset && normalizeSymbolKey(n.asset) === key);
-    if (node) {
-      node.lastSignal = null;
-    }
+    if (node) node.lastSignal = null;
 
-    // Update top alert & toast notification
     const isWin = outcome === 'TP HIT';
     if (outcome === 'TP HIT' || outcome === 'SL HIT') {
       window.showToast(
@@ -256,7 +251,7 @@
           <div style="display:flex; flex-direction:column; gap:4px; min-width:260px; padding:8px 14px; border-radius:12px; backdrop-filter:blur(22px) saturate(185%); background:${isWin ? 'rgba(4,42,26,0.88)' : 'rgba(48,6,14,0.88)'}; border:1px solid ${isWin ? 'rgba(52,211,153,0.9)' : 'rgba(251,113,133,0.9)'}; box-shadow:0 10px 30px rgba(0,0,0,0.65); font-family:'JetBrains Mono',monospace;">
             <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
               <span style="font-size:10px; font-weight:900; color:${isWin ? '#6ee7b7' : '#fda4af'};">${isWin ? '✅ TARGET REACHED (TP HIT)' : '❌ STOP LOSS HIT (SL HIT)'}</span>
-              <span style="font-size:9px; color:#cbd5e1;">${trade.assetClass}</span>
+              <button type="button" onclick="document.getElementById('signal-alert-banner').classList.add('hidden')" style="background:none; border:none; color:#cbd5e1; font-weight:800; cursor:pointer; font-size:12px;">✕</button>
             </div>
             <div style="font-size:11px; font-weight:800; color:#ffffff;">
               ${trade.symbol} • ${trade.direction} • <span style="color:${isWin ? '#34d399' : '#fb7185'};">${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%</span>
@@ -290,31 +285,17 @@
 
       const liveP = priceByKey[key];
       if (!liveP || Number.isNaN(liveP) || liveP <= 0) return;
-
-      // Ignore obviously corrupted/mismatched ticks (>50% instant deviation)
       if (Math.abs(liveP - trade.entryPrice) / trade.entryPrice > 0.5) return;
 
       trade.livePrice = liveP;
       changed = true;
 
       if (trade.isLong) {
-        if (liveP <= trade.slPrice) {
-          closeActiveSignal(key, 'SL HIT', liveP);
-          return;
-        }
-        if (liveP >= trade.tp1Price) {
-          closeActiveSignal(key, 'TP HIT', liveP);
-          return;
-        }
+        if (liveP <= trade.slPrice) { closeActiveSignal(key, 'SL HIT', liveP); return; }
+        if (liveP >= trade.tp1Price) { closeActiveSignal(key, 'TP HIT', liveP); return; }
       } else {
-        if (liveP >= trade.slPrice) {
-          closeActiveSignal(key, 'SL HIT', liveP);
-          return;
-        }
-        if (liveP <= trade.tp1Price) {
-          closeActiveSignal(key, 'TP HIT', liveP);
-          return;
-        }
+        if (liveP >= trade.slPrice) { closeActiveSignal(key, 'SL HIT', liveP); return; }
+        if (liveP <= trade.tp1Price) { closeActiveSignal(key, 'TP HIT', liveP); return; }
       }
     });
 
@@ -451,7 +432,7 @@
     return 'CRYPTO';
   }
 
-  function renderSignalHeaderBar(sig) {
+  function renderSignalHeaderBar(sig, showTopBanner = true) {
     if (!sig) return;
     const marketType = detectSignalMarketType(sig.symbol || sig.pair, sig.assetClass);
     const isLong = sig.isLong !== undefined
@@ -512,27 +493,30 @@
           ].join(';');
     }
 
-    const alertBanner = document.getElementById('signal-alert-banner');
-    if (alertBanner) {
-      alertBanner.classList.remove('hidden');
-      alertBanner.innerHTML = `
-        <div style="display:flex; flex-direction:column; gap:4px; min-width:250px; padding:8px 12px; border-radius:12px; backdrop-filter:blur(22px) saturate(180%); background:${isLong ? 'rgba(4,34,22,0.82)' : 'rgba(42,6,14,0.82)'}; border:1px solid ${isLong ? 'rgba(52,211,153,0.75)' : 'rgba(251,113,133,0.75)'}; box-shadow:0 10px 30px rgba(0,0,0,0.55), 0 0 22px ${isLong ? 'rgba(16,185,129,0.32)' : 'rgba(244,63,94,0.32)'}; font-family:'JetBrains Mono',monospace;">
-          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
-            <span style="padding:1px 7px; border-radius:999px; font-size:8.5px; font-weight:800; background:${tStyle.bg}; border:1px solid ${tStyle.border}; color:${tStyle.color};">${tStyle.icon} ${tStyle.label}</span>
-            <span style="font-size:10px; font-weight:800; color:#f8fafc;">${sig.symbol || sig.pair || ''} @ ${window.formatPrice(sig.entryPrice)}</span>
+    if (showTopBanner) {
+      const alertBanner = document.getElementById('signal-alert-banner');
+      if (alertBanner) {
+        alertBanner.classList.remove('hidden');
+        alertBanner.innerHTML = `
+          <div style="display:flex; flex-direction:column; gap:4px; min-width:250px; padding:8px 12px; border-radius:12px; backdrop-filter:blur(22px) saturate(180%); background:${isLong ? 'rgba(4,34,22,0.86)' : 'rgba(42,6,14,0.86)'}; border:1px solid ${isLong ? 'rgba(52,211,153,0.75)' : 'rgba(251,113,133,0.75)'}; box-shadow:0 10px 30px rgba(0,0,0,0.55), 0 0 22px ${isLong ? 'rgba(16,185,129,0.32)' : 'rgba(244,63,94,0.32)'}; font-family:'JetBrains Mono',monospace;">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+              <span style="padding:1px 7px; border-radius:999px; font-size:8.5px; font-weight:800; background:${tStyle.bg}; border:1px solid ${tStyle.border}; color:${tStyle.color};">${tStyle.icon} ${tStyle.label}</span>
+              <span style="font-size:10px; font-weight:800; color:#f8fafc;">${sig.symbol || sig.pair || ''} @ ${window.formatPrice(sig.entryPrice)}</span>
+              <button type="button" onclick="document.getElementById('signal-alert-banner').classList.add('hidden')" style="background:none; border:none; color:#cbd5e1; font-weight:800; cursor:pointer; font-size:11px;">✕</button>
+            </div>
+            <div style="width:100%; text-align:center; padding:4px 8px; border-radius:6px; font-size:10px; font-weight:900; letter-spacing:0.08em; color:#ffffff; background:${isLong ? 'linear-gradient(90deg,#10b981,#059669)' : 'linear-gradient(90deg,#f43f5e,#e11d48)'};">
+              ${isLong ? '▲ BUY / LONG SIGNAL' : '▼ SELL / SHORT SIGNAL'} • ${sig.confidence || 88}%
+            </div>
           </div>
-          <div style="width:100%; text-align:center; padding:4px 8px; border-radius:6px; font-size:10px; font-weight:900; letter-spacing:0.08em; color:#ffffff; background:${isLong ? 'linear-gradient(90deg,#10b981,#059669)' : 'linear-gradient(90deg,#f43f5e,#e11d48)'};">
-            ${isLong ? '▲ BUY / LONG SIGNAL' : '▼ SELL / SHORT SIGNAL'} • ${sig.confidence || 88}%
-          </div>
-        </div>
-      `;
+        `;
+      }
     }
   }
 
   window.renderNeuralSignalBar = renderSignalHeaderBar;
 
   // =========================================================================
-  // LIVE TRADINGVIEW LOGIN SCREEN (REAL TV CHART + BINANCE & FX LIVE TICKER)
+  // LIVE TRADINGVIEW LOGIN SCREEN (NON-BLOCKING LAYER + BINANCE & FX TICKER)
   // =========================================================================
   const LOGIN_TV_PAIRS = [
     { label: 'BTC/USDT', tvSymbol: 'BINANCE:BTCUSDT' },
@@ -659,6 +643,13 @@
     overlay.style.overflowY = 'auto';
     overlay.style.paddingTop = '44px';
     overlay.style.paddingBottom = '56px';
+    overlay.style.isolation = 'isolate';
+
+    // Raise ALL existing login screen children above the fixed TradingView background so clicks ALWAYS work
+    Array.from(overlay.children).forEach(child => {
+      child.style.position = child.style.position || 'relative';
+      child.style.zIndex = '15';
+    });
 
     if (!document.getElementById('login-trading-css')) {
       const st = document.createElement('style');
@@ -709,7 +700,7 @@
     if (authCard && authCard !== overlay) {
       authCard.id = authCard.id || 'login-glass-auth-card';
       authCard.style.position = 'relative';
-      authCard.style.zIndex = '10';
+      authCard.style.zIndex = '20';
       authCard.style.background = 'linear-gradient(145deg, rgba(8, 16, 32, 0.72), rgba(4, 9, 20, 0.80))';
       authCard.style.backdropFilter = 'blur(26px) saturate(185%)';
       authCard.style.webkitBackdropFilter = 'blur(26px) saturate(185%)';
@@ -737,7 +728,7 @@
     overlay.appendChild(tickerBar);
     updateLoginTickerTape();
     setInterval(() => {
-      if (!overlay.classList.contains('hidden')) updateLoginTickerTape();
+      if (overlay.style.display !== 'none' && !overlay.classList.contains('hidden')) updateLoginTickerTape();
     }, 10000);
 
     const bar = document.createElement('div');
@@ -1140,7 +1131,7 @@
     if (!bubbleCanvas) {
       bubbleCanvas = document.createElement('canvas');
       bubbleCanvas.id = 'crypto-bubbles-canvas';
-      bubbleCanvas.style.cssText = 'position:fixed; inset:0; width:100vw; height:100vh; z-index:2; cursor:pointer;';
+      bubbleCanvas.style.cssText = 'position:fixed; inset:0; width:100vw; height:100vh; z-index:1; cursor:pointer;';
       document.body.appendChild(bubbleCanvas);
       bubbleCtx = bubbleCanvas.getContext('2d');
 
@@ -1164,6 +1155,7 @@
     }
 
     bubbleCanvas.style.display = 'block';
+    bubbleCanvas.style.pointerEvents = 'auto';
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     bubbleCanvas.width = window.innerWidth * dpr;
     bubbleCanvas.height = window.innerHeight * dpr;
@@ -1274,7 +1266,10 @@
 
   function stopCryptoBubbles() {
     if (bubbleRaf) { cancelAnimationFrame(bubbleRaf); bubbleRaf = null; }
-    if (bubbleCanvas) bubbleCanvas.style.display = 'none';
+    if (bubbleCanvas) {
+      bubbleCanvas.style.display = 'none';
+      bubbleCanvas.style.pointerEvents = 'none';
+    }
     const neuralCanvas = document.getElementById('neural-canvas');
     if (neuralCanvas) neuralCanvas.style.opacity = '1';
   }
@@ -1423,7 +1418,7 @@
       'font-family:"JetBrains Mono",monospace', 'font-size:11px', 'font-weight:800',
       'box-shadow:0 8px 26px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.2)',
       'backdrop-filter:blur(18px) saturate(180%)',
-      'display:flex', 'align-items:center', 'gap:8px'
+      'display:flex', 'align-items:center', 'gap:8px', 'pointer-events:none'
     ].join(';');
     banner.innerHTML = `<span>${st.icon}</span><span>${clean.replace(/</g, '&lt;')}</span>`;
   }
@@ -1446,7 +1441,7 @@
     if (s >= 60) {
       autoSignalTimer = setInterval(() => {
         if (!window.NEURAL_ADMIN_SETTINGS?.signalsPaused && currentUser) {
-          generateNearEntrySignal();
+          generateNearEntrySignal(false);
         }
       }, s * 1000);
     }
@@ -1701,7 +1696,7 @@
       window.showToast(`Default Leverage set to ${e.target.value}x`, '⚡');
     });
 
-    hub.querySelector('#admin-force-signal-btn').addEventListener('click', () => generateNearEntrySignal());
+    hub.querySelector('#admin-force-signal-btn').addEventListener('click', () => generateNearEntrySignal(false));
 
     hub.querySelector('#admin-unlock-all-pairs-btn').addEventListener('click', () => {
       lifecycleState.activeByKey = {};
@@ -1772,22 +1767,24 @@
 
     try {
       const baseUrl = window.NEURAL_CONFIG?.API_BASE_URL || '';
-      const resp = await fetch(`${baseUrl}/api/market/binance-scan`);
-      const badge = document.getElementById('admin-hub-api-status');
-      if (resp.ok) {
-        if (badge) { badge.textContent = '● API ONLINE'; badge.style.color = '#34d399'; }
-        const data = await resp.json();
-        if (data.ok && Array.isArray(data.pairs)) {
-          data.pairs.forEach(p => {
-            if (p.fundingRate !== undefined) fundingMap[p.binanceSymbol] = p.fundingRate;
-            if (p.price > 0) {
-              priceMap[p.binanceSymbol] = { price: p.price, change: p.change };
-            }
-          });
+      if (baseUrl) {
+        const resp = await fetch(`${baseUrl}/api/market/binance-scan`);
+        const badge = document.getElementById('admin-hub-api-status');
+        if (resp.ok) {
+          if (badge) { badge.textContent = '● API ONLINE'; badge.style.color = '#34d399'; }
+          const data = await resp.json();
+          if (data.ok && Array.isArray(data.pairs)) {
+            data.pairs.forEach(p => {
+              if (p.fundingRate !== undefined) fundingMap[p.binanceSymbol] = p.fundingRate;
+              if (p.price > 0) {
+                priceMap[p.binanceSymbol] = { price: p.price, change: p.change };
+              }
+            });
+          }
+        } else if (badge) {
+          badge.textContent = '● DIRECT MODE';
+          badge.style.color = '#fbbf24';
         }
-      } else if (badge) {
-        badge.textContent = '● DIRECT MODE';
-        badge.style.color = '#fbbf24';
       }
     } catch (_) {
       const badge = document.getElementById('admin-hub-api-status');
@@ -1827,7 +1824,6 @@
       if (fundingMap[key] !== undefined) {
         n.asset.fundingRate = fundingMap[key];
       }
-      // Restore active signal reference onto node if locked
       if (lifecycleState.activeByKey[key]) {
         n.lastSignal = lifecycleState.activeByKey[key];
       }
@@ -1917,11 +1913,10 @@
       chg.className = node.asset.change >= 0 ? 'text-[11px] text-emerald-400 font-semibold' : 'text-[11px] text-rose-400 font-semibold';
     }
 
-    // If this selected pair has a locked active signal, display it directly
     const activeSig = getActiveSignalForPair(node.asset);
     if (activeSig) {
       hasActiveSignal = true;
-      renderSignalHeaderBar(activeSig);
+      renderSignalHeaderBar(activeSig, false);
       const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
       setText('sig-entry', window.formatPrice(activeSig.entryPrice));
       setText('sig-tp1', window.formatPrice(activeSig.tp1Price));
@@ -1933,156 +1928,177 @@
     document.getElementById('term-signal-box')?.classList.toggle('hidden', !hasActiveSignal);
   }
 
+  // Helper: fetch 15m live klines with 3-source fallback
+  async function fetchLive15mKlines(binSym) {
+    const baseUrl = window.NEURAL_CONFIG?.API_BASE_URL || '';
+    const urls = [
+      `https://data-api.binance.vision/api/v3/klines?symbol=${encodeURIComponent(binSym)}&interval=15m&limit=40`,
+      `https://api.binance.com/api/v3/klines?symbol=${encodeURIComponent(binSym)}&interval=15m&limit=40`
+    ];
+    if (baseUrl) {
+      urls.push(`${baseUrl}/api/market/klines?symbol=${encodeURIComponent(binSym)}&interval=15m&limit=40`);
+    }
+
+    for (const url of urls) {
+      try {
+        const resp = await fetch(url);
+        if (!resp.ok) continue;
+        const json = await resp.json();
+        const raw = Array.isArray(json) ? json : (json.klines || []);
+        if (Array.isArray(raw) && raw.length >= 10) {
+          return raw.map(k => Array.isArray(k)
+            ? { open: parseFloat(k[1]), high: parseFloat(k[2]), low: parseFloat(k[3]), close: parseFloat(k[4]) }
+            : { open: Number(k.open), high: Number(k.high), low: Number(k.low), close: Number(k.close) }
+          );
+        }
+      } catch (_) {}
+    }
+    return [];
+  }
+
   // ---------------- REAL-TIME 15M MARKET STRUCTURE SIGNAL ENGINE (PAIR-LOCKED) ----------------
   async function generateNearEntrySignal(preferSelectedNode = false) {
-    const settings = loadAdminSettings();
-    if (settings.signalsPaused) {
-      window.showToast('Signals are Paused by Admin', '⏸️');
-      return;
-    }
-
-    const nodes = (window.NeuralCanvasEngine ? window.NeuralCanvasEngine.getNodes() : []).filter(n => n.asset);
-    if (!nodes.length) return;
-
-    let chosen = null;
-
-    if (preferSelectedNode) {
-      const sel = nodes[window.NeuralCanvasEngine?.getSelectedIndex?.() || 0];
-      if (sel && sel.asset) {
-        if (isPairLocked(sel.asset)) {
-          const existing = getActiveSignalForPair(sel.asset);
-          window.showToast(`🔒 ${sel.asset.symbol} already has an OPEN ${existing.direction} signal! Wait for TP/SL hit.`, '⏳');
-          renderSignalHeaderBar(existing);
-          return;
-        }
-        chosen = sel;
-      }
-    }
-
-    if (!chosen) {
-      // STRICT PAIR LOCK: Only pick pairs that do NOT currently have an open signal
-      const unlockedNodes = nodes.filter(n => !isPairLocked(n.asset));
-      if (!unlockedNodes.length) {
-        window.showToast('🔒 All pairs currently have OPEN signals waiting for TP/SL!', '⏳');
+    try {
+      const settings = loadAdminSettings();
+      if (settings.signalsPaused) {
+        window.showToast('Signals are Paused by Admin', '⏸️');
         return;
       }
 
-      let pool = unlockedNodes.filter(n => !recentSymbols.includes(n.asset.symbol));
-      if (!pool.length) { recentSymbols = []; pool = unlockedNodes; }
-      chosen = pool[0];
-    }
+      const nodes = (window.NeuralCanvasEngine ? window.NeuralCanvasEngine.getNodes() : []).filter(n => n.asset);
+      if (!nodes.length) {
+        window.showToast('Market nodes still loading — try again in 2s', '⏳');
+        return;
+      }
 
-    recentSymbols.push(chosen.asset.symbol);
-    if (recentSymbols.length > 15) recentSymbols = recentSymbols.slice(-15);
+      let chosen = null;
 
-    const binSym = normalizeSymbolKey(chosen.asset) || 'BTCUSDT';
-    let klines = [];
-
-    try {
-      const resp = await fetch(`https://data-api.binance.vision/api/v3/klines?symbol=${encodeURIComponent(binSym)}&interval=15m&limit=40`);
-      if (resp.ok) {
-        const raw = await resp.json();
-        if (Array.isArray(raw) && raw.length >= 10) {
-          klines = raw.map(k => ({
-            open: parseFloat(k[1]),
-            high: parseFloat(k[2]),
-            low: parseFloat(k[3]),
-            close: parseFloat(k[4])
-          }));
+      if (preferSelectedNode) {
+        const sel = nodes[window.NeuralCanvasEngine?.getSelectedIndex?.() || 0];
+        if (sel && sel.asset) {
+          if (isPairLocked(sel.asset)) {
+            const existing = getActiveSignalForPair(sel.asset);
+            window.showToast(`🔒 ${sel.asset.symbol} already has an OPEN ${existing.direction} signal! Waiting for TP/SL hit.`, '⏳');
+            renderSignalHeaderBar(existing, true);
+            return;
+          }
+          chosen = sel;
         }
       }
-    } catch (_) {}
 
-    if (!klines.length) {
-      window.showToast('Live candle data unavailable — try again', '⚠️');
-      return;
+      if (!chosen) {
+        const unlockedNodes = nodes.filter(n => !isPairLocked(n.asset));
+        if (!unlockedNodes.length) {
+          window.showToast('🔒 All pairs currently have OPEN signals waiting for TP/SL!', '⏳');
+          return;
+        }
+
+        let pool = unlockedNodes.filter(n => !recentSymbols.includes(n.asset.symbol));
+        if (!pool.length) { recentSymbols = []; pool = unlockedNodes; }
+        chosen = pool[0];
+      }
+
+      recentSymbols.push(chosen.asset.symbol);
+      if (recentSymbols.length > 15) recentSymbols = recentSymbols.slice(-15);
+
+      const binSym = normalizeSymbolKey(chosen.asset) || 'BTCUSDT';
+      window.showToast(`Scanning live 15m structure on ${chosen.asset.symbol}...`, '🔍');
+
+      const klines = await fetchLive15mKlines(binSym);
+      if (!klines.length) {
+        window.showToast(`Live candle feed unavailable for ${chosen.asset.symbol} — try again`, '⚠️');
+        return;
+      }
+
+      const livePrice = klines[klines.length - 1].close;
+      chosen.asset.price = livePrice;
+
+      const recent = klines.slice(-24);
+      const swingHigh = Math.max(...recent.map(k => k.high));
+      const swingLow  = Math.min(...recent.map(k => k.low));
+      const midRange  = (swingHigh + swingLow) / 2;
+
+      let isLong = livePrice < midRange;
+      if (settings.directionFilter === 'long_only') isLong = true;
+      if (settings.directionFilter === 'short_only') isLong = false;
+
+      const spec = isLong
+        ? { isLong: true, side: 'BUY / LONG', mode: 'green_buy' }
+        : { isLong: false, side: 'SELL / SHORT', mode: 'red_sell' };
+
+      const rrMult = settings.rrMode === 'conservative' ? { tp1: 1.4, tp2: 1.8 }
+        : settings.rrMode === 'sniper' ? { tp1: 2.5, tp2: 4.2 }
+        : { tp1: 1.8, tp2: 2.8 };
+
+      const entryPrice = livePrice;
+      let slPrice, tp1Price, tp2Price;
+
+      if (isLong) {
+        slPrice = Math.min(swingLow * 0.999, livePrice * 0.994);
+        const risk = Math.max(livePrice * 0.0025, entryPrice - slPrice);
+        tp1Price = entryPrice + risk * rrMult.tp1;
+        tp2Price = Math.max(swingHigh * 0.999, entryPrice + risk * rrMult.tp2);
+      } else {
+        slPrice = Math.max(swingHigh * 1.001, livePrice * 1.006);
+        const risk = Math.max(livePrice * 0.0025, slPrice - entryPrice);
+        tp1Price = entryPrice - risk * rrMult.tp1;
+        tp2Price = Math.min(swingLow * 1.001, entryPrice - risk * rrMult.tp2);
+      }
+
+      const distFromEq = Math.abs(livePrice - midRange) / (swingHigh - swingLow || 1);
+      const confidence = Math.max(Number(settings.minConfidence) || 75, Math.min(96, Math.round(78 + distFromEq * 30)));
+      const assetClass = detectSignalMarketType(chosen.asset.symbol, chosen.asset.assetClass);
+
+      const sig = {
+        symbol: chosen.asset.symbol,
+        binanceSymbol: binSym,
+        assetClass,
+        isLong,
+        direction: spec.side,
+        confidence,
+        entryPrice,
+        tp1Price,
+        tp2Price,
+        slPrice,
+        source: 'REALTIME_15M'
+      };
+
+      const reg = registerActiveSignal(sig);
+      if (!reg.ok && reg.reason === 'PAIR_LOCKED') {
+        window.showToast(`🔒 ${sig.symbol} already active — waiting for TP/SL hit`, '⏳');
+        return;
+      }
+
+      chosen.entryZoneAnchor = entryPrice;
+      chosen.lastSignal = sig;
+      hasActiveSignal = true;
+
+      try {
+        window.NeuralCanvasEngine.setSelectedIndex(chosen.index);
+        window.NeuralCanvasEngine.setActiveSignaledIndex(chosen.index);
+        window.NeuralCanvasEngine.setNeuralColorMode(spec.mode, sig);
+        window.NeuralCanvasEngine.triggerBurst(chosen.x, chosen.y);
+      } catch (_) {}
+
+      const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+      renderSignalHeaderBar(sig, true);
+      setText('sig-entry', window.formatPrice(sig.entryPrice));
+      setText('sig-tp1', window.formatPrice(sig.tp1Price));
+      setText('sig-tp2', window.formatPrice(sig.tp2Price));
+      setText('sig-sl', window.formatPrice(sig.slPrice));
+      setText('sig-reasoning', `[${assetClass}] Locked 15m ${isLong ? 'Discount' : 'Premium'} Signal on ${sig.symbol} @ ${window.formatPrice(entryPrice)}. Auto-monitoring TP/SL.`);
+
+      updateTerminalCard();
+      if (window.NeuralPnlManager?.logTrade) {
+        try { window.NeuralPnlManager.logTrade({ ...sig, entryDistancePct: 0, __alreadyTracked: true }); } catch (_) {}
+      }
+      window.showToast(`[${assetClass}] ${isLong ? '🟢 BUY / LONG' : '🔴 SELL / SHORT'}: ${sig.symbol} (Locked until TP/SL)`, isLong ? '🚀' : '🔻');
+    } catch (err) {
+      console.error('generateNearEntrySignal error:', err);
+      window.showToast('Signal generation failed — retrying', '⚠️');
     }
-
-    const livePrice = klines[klines.length - 1].close;
-    chosen.asset.price = livePrice;
-
-    const recent = klines.slice(-24);
-    const swingHigh = Math.max(...recent.map(k => k.high));
-    const swingLow  = Math.min(...recent.map(k => k.low));
-    const midRange  = (swingHigh + swingLow) / 2;
-
-    let isLong = livePrice < midRange;
-    if (settings.directionFilter === 'long_only') isLong = true;
-    if (settings.directionFilter === 'short_only') isLong = false;
-
-    const spec = isLong
-      ? { isLong: true, side: 'BUY / LONG', mode: 'green_buy' }
-      : { isLong: false, side: 'SELL / SHORT', mode: 'red_sell' };
-
-    const rrMult = settings.rrMode === 'conservative' ? { tp1: 1.4, tp2: 1.8 }
-      : settings.rrMode === 'sniper' ? { tp1: 2.5, tp2: 4.2 }
-      : { tp1: 1.8, tp2: 2.8 };
-
-    const entryPrice = livePrice;
-    let slPrice, tp1Price, tp2Price;
-
-    if (isLong) {
-      slPrice = Math.min(swingLow * 0.999, livePrice * 0.994);
-      const risk = Math.max(livePrice * 0.0025, entryPrice - slPrice);
-      tp1Price = entryPrice + risk * rrMult.tp1;
-      tp2Price = Math.max(swingHigh * 0.999, entryPrice + risk * rrMult.tp2);
-    } else {
-      slPrice = Math.max(swingHigh * 1.001, livePrice * 1.006);
-      const risk = Math.max(livePrice * 0.0025, slPrice - entryPrice);
-      tp1Price = entryPrice - risk * rrMult.tp1;
-      tp2Price = Math.min(swingLow * 1.001, entryPrice - risk * rrMult.tp2);
-    }
-
-    const distFromEq = Math.abs(livePrice - midRange) / (swingHigh - swingLow || 1);
-    const confidence = Math.max(Number(settings.minConfidence) || 75, Math.min(96, Math.round(78 + distFromEq * 30)));
-    const assetClass = detectSignalMarketType(chosen.asset.symbol, chosen.asset.assetClass);
-
-    const sig = {
-      symbol: chosen.asset.symbol,
-      binanceSymbol: binSym,
-      assetClass,
-      isLong,
-      direction: spec.side,
-      confidence,
-      entryPrice,
-      tp1Price,
-      tp2Price,
-      slPrice,
-      source: 'REALTIME_15M'
-    };
-
-    // Lock pair until TP or SL hits
-    const reg = registerActiveSignal(sig);
-    if (!reg.ok && reg.reason === 'PAIR_LOCKED') {
-      window.showToast(`🔒 ${sig.symbol} already active — waiting for TP/SL hit`, '⏳');
-      return;
-    }
-
-    chosen.entryZoneAnchor = entryPrice;
-    chosen.lastSignal = sig;
-    hasActiveSignal = true;
-
-    window.NeuralCanvasEngine.setSelectedIndex(chosen.index);
-    window.NeuralCanvasEngine.setActiveSignaledIndex(chosen.index);
-    window.NeuralCanvasEngine.setNeuralColorMode(spec.mode, sig);
-    window.NeuralCanvasEngine.triggerBurst(chosen.x, chosen.y);
-
-    const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-    renderSignalHeaderBar(sig);
-    setText('sig-entry', window.formatPrice(sig.entryPrice));
-    setText('sig-tp1', window.formatPrice(sig.tp1Price));
-    setText('sig-tp2', window.formatPrice(sig.tp2Price));
-    setText('sig-sl', window.formatPrice(sig.slPrice));
-    setText('sig-reasoning', `[${assetClass}] Locked 15m ${isLong ? 'Discount' : 'Premium'} Signal on ${sig.symbol} @ ${window.formatPrice(entryPrice)}. Auto-monitoring TP/SL.`);
-
-    updateTerminalCard();
-    if (window.NeuralPnlManager?.logTrade) {
-      window.NeuralPnlManager.logTrade({ ...sig, entryDistancePct: 0, __alreadyTracked: true });
-    }
-    window.showToast(`[${assetClass}] ${isLong ? '🟢 BUY / LONG' : '🔴 SELL / SHORT'}: ${sig.symbol} (Locked until TP/SL)`, isLong ? '🚀' : '🔻');
   }
 
-  // Hook into NeuralPnlManager.logTrade so Vision AI signals also obey Pair Lock & Auto TP/SL tracking
   function hookExternalSignalLogger() {
     if (!window.NeuralPnlManager || typeof window.NeuralPnlManager.logTrade !== 'function' || window.NeuralPnlManager.__lifecycleHooked) return;
     const originalLogTrade = window.NeuralPnlManager.logTrade.bind(window.NeuralPnlManager);
@@ -2094,7 +2110,7 @@
           return;
         }
         registerActiveSignal(trade);
-        renderSignalHeaderBar(trade);
+        renderSignalHeaderBar(trade, true);
       }
       return originalLogTrade(trade);
     };
@@ -2278,7 +2294,12 @@
       currentUser = null;
       isAdmin = false;
       document.getElementById('protected-website-ui')?.classList.add('hidden');
-      document.getElementById('boot-intro-overlay')?.classList.remove('hidden', 'opacity-0', 'pointer-events-none');
+      const gate = document.getElementById('boot-intro-overlay');
+      if (gate) {
+        gate.style.display = '';
+        gate.style.pointerEvents = '';
+        gate.classList.remove('hidden', 'opacity-0', 'pointer-events-none');
+      }
       document.getElementById('admin-panel')?.classList.add('hidden', 'translate-x-full');
       const userPill = document.getElementById('user-quick-theme-pill');
       const userModal = document.getElementById('user-themes-studio-modal');
@@ -2301,7 +2322,11 @@
     const gate = document.getElementById('boot-intro-overlay');
     if (gate) {
       gate.classList.add('opacity-0', 'pointer-events-none');
-      setTimeout(() => gate.classList.add('hidden'), 400);
+      gate.style.pointerEvents = 'none';
+      setTimeout(() => {
+        gate.classList.add('hidden');
+        gate.style.display = 'none';
+      }, 300);
     }
 
     mountUserThemesPanel();
@@ -2359,8 +2384,11 @@
     loadAdminUsers();
   };
 
-  // ---------------- BOOTSTRAP EVERYTHING ----------------
-  window.addEventListener('load', () => {
+  // ---------------- INSTANT BOOTSTRAP (DOES NOT WAIT FOR SLOW EXTERNAL RESOURCES) ----------------
+  function bootstrapApp() {
+    if (appBooted) return;
+    appBooted = true;
+
     injectThemeCss();
     initTradingLoginScreen();
     initAuth();
@@ -2450,5 +2478,11 @@
         window.NeuralPnlManager?.evaluateNearEntriesAndOpenTrades();
       } catch (_) {}
     }, 1000);
-  });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bootstrapApp);
+  } else {
+    bootstrapApp();
+  }
 })();
