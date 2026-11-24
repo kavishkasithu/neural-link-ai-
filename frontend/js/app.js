@@ -1,7 +1,7 @@
 /**
  * MAIN FRONTEND APPLICATION CONTROLLER
  * Includes: True Real-Time Binance Vision Prices, 15m Structure Signals,
- * Built-in Admin Command Center (Themes + Signals + System), and Crypto Bubbles Engine.
+ * Pro Admin Command Center, 10 Full-Transform Trading Themes, and Crypto Bubbles Engine.
  */
 (function () {
   let currentUser = null;
@@ -16,14 +16,14 @@
 
   const DEFAULT_ADMIN_SETTINGS = {
     announcement: '',
-    announcementType: 'gold', // gold | red | green | cyan
+    announcementType: 'gold',
     minConfidence: 75,
-    rrMode: 'balanced',       // conservative | balanced | sniper
-    directionFilter: 'both',  // both | long_only | short_only
+    rrMode: 'balanced',
+    directionFilter: 'both',
     signalsPaused: false,
-    autoSignalSec: 0,         // 0 = off, 60, 180, 300
+    autoSignalSec: 0,
     defaultLeverage: 10,
-    glassOpacity: 86,
+    glassOpacity: 88,
     showFloatingThemeBtn: true
   };
 
@@ -104,7 +104,7 @@
   }
 
   // =========================================================================
-  // BUILT-IN 10 THEMES + CRYPTO BUBBLES PHYSICS ENGINE (ADMIN ONLY CONTROL)
+  // 10 PRO FULL-TRANSFORM TRADING THEMES + CRYPTO BUBBLES ENGINE
   // =========================================================================
   let activeTheme = localStorage.getItem(THEME_STORAGE_KEY) || 'neural_default';
   let bubbleCanvas = null;
@@ -114,110 +114,293 @@
   let hoveredBubbleIdx = -1;
 
   const THEMES = [
-    { id: 'neural_default',  name: '🧠 Neural Cortex',  desc: 'Default Network', badge: '#22d3ee', isBubbles: false, css: '' },
     {
-      id: 'crypto_bubbles',  name: '🫧 Crypto Bubbles', desc: 'Live Physics',    badge: '#34d399', isBubbles: true,
-      css: `body[data-neural-theme="crypto_bubbles"] { background: radial-gradient(circle at 50% 35%, #07192b 0%, #02060c 100%) !important; }`
+      id: 'neural_default',
+      name: '🧠 Neural Cortex',
+      desc: 'Default Cyan Glass',
+      badge: '#22d3ee',
+      isBubbles: false,
+      css: `
+        body[data-neural-theme="neural_default"] #neural-canvas { filter: none !important; }
+      `
     },
     {
-      id: 'cyberpunk_neon',  name: '⚡ Cyberpunk Neon', desc: 'Magenta & Cyan',  badge: '#f472b6', isBubbles: false,
+      id: 'crypto_bubbles',
+      name: '🫧 Crypto Bubbles',
+      desc: 'Live 3D Physics',
+      badge: '#34d399',
+      isBubbles: true,
       css: `
-        body[data-neural-theme="cyberpunk_neon"] { background: radial-gradient(circle at 20% 20%, #2e0647 0%, #070212 72%) !important; }
-        body[data-neural-theme="cyberpunk_neon"] #protected-website-ui [id$="-widget"],
-        body[data-neural-theme="cyberpunk_neon"] #protected-website-ui #asset-terminal-card,
-        body[data-neural-theme="cyberpunk_neon"] #protected-website-ui #hud-wrapper-tab {
-          background: rgba(20, 6, 36, var(--neural-glass-alpha, 0.86)) !important;
-          border-color: rgba(236, 72, 153, 0.78) !important;
-          box-shadow: 0 0 24px rgba(236, 72, 153, 0.30) !important;
-        }`
-    },
-    {
-      id: 'obsidian_gold',   name: '👑 Obsidian Gold',  desc: 'Black & Gold',    badge: '#fbbf24', isBubbles: false,
-      css: `
-        body[data-neural-theme="obsidian_gold"] { background: radial-gradient(circle at 50% 20%, #2b1e05 0%, #060401 75%) !important; }
-        body[data-neural-theme="obsidian_gold"] #protected-website-ui [id$="-widget"],
-        body[data-neural-theme="obsidian_gold"] #protected-website-ui #asset-terminal-card,
-        body[data-neural-theme="obsidian_gold"] #protected-website-ui #hud-wrapper-tab {
-          background: rgba(24, 17, 4, var(--neural-glass-alpha, 0.86)) !important;
-          border-color: rgba(245, 158, 11, 0.78) !important;
-          box-shadow: 0 0 24px rgba(245, 158, 11, 0.28) !important;
-        }`
-    },
-    {
-      id: 'matrix_terminal', name: '💚 Matrix Terminal', desc: 'Emerald Quant',  badge: '#10b981', isBubbles: false,
-      css: `
-        body[data-neural-theme="matrix_terminal"] { background: radial-gradient(circle at 50% 50%, #032b15 0%, #010905 80%) !important; }
-        body[data-neural-theme="matrix_terminal"] #protected-website-ui [id$="-widget"],
-        body[data-neural-theme="matrix_terminal"] #protected-website-ui #asset-terminal-card,
-        body[data-neural-theme="matrix_terminal"] #protected-website-ui #hud-wrapper-tab {
-          background: rgba(3, 24, 12, var(--neural-glass-alpha, 0.86)) !important;
-          border-color: rgba(16, 185, 129, 0.78) !important;
-          box-shadow: 0 0 22px rgba(16, 185, 129, 0.28) !important;
-        }`
-    },
-    {
-      id: 'liquid_aurora',   name: '🌌 Liquid Aurora',  desc: 'Violet & Teal',   badge: '#a78bfa', isBubbles: false,
-      css: `
-        body[data-neural-theme="liquid_aurora"] { background: linear-gradient(135deg, #09223b 0%, #220c42 52%, #052e29 100%) !important; }
-        body[data-neural-theme="liquid_aurora"] #protected-website-ui [id$="-widget"],
-        body[data-neural-theme="liquid_aurora"] #protected-website-ui #asset-terminal-card,
-        body[data-neural-theme="liquid_aurora"] #protected-website-ui #hud-wrapper-tab {
-          background: rgba(12, 14, 36, var(--neural-glass-alpha, 0.86)) !important;
-          border-color: rgba(139, 92, 246, 0.75) !important;
-          box-shadow: 0 0 26px rgba(45, 212, 191, 0.24) !important;
-        }`
-    },
-    {
-      id: 'crimson_inferno', name: '🌋 Crimson Inferno', desc: 'Blood & Lava',   badge: '#fb7185', isBubbles: false,
-      css: `
-        body[data-neural-theme="crimson_inferno"] { background: radial-gradient(circle at 50% 30%, #3b0711 0%, #090204 78%) !important; }
-        body[data-neural-theme="crimson_inferno"] #protected-website-ui [id$="-widget"],
-        body[data-neural-theme="crimson_inferno"] #protected-website-ui #asset-terminal-card,
-        body[data-neural-theme="crimson_inferno"] #protected-website-ui #hud-wrapper-tab {
-          background: rgba(28, 5, 10, var(--neural-glass-alpha, 0.86)) !important;
-          border-color: rgba(244, 63, 94, 0.8) !important;
-          box-shadow: 0 0 24px rgba(244, 63, 94, 0.30) !important;
-        }`
-    },
-    {
-      id: 'arctic_frost',    name: '❄️ Arctic Frost',   desc: 'Glacier Blue',    badge: '#7dd3fc', isBubbles: false,
-      css: `
-        body[data-neural-theme="arctic_frost"] { background: radial-gradient(circle at 50% 20%, #0d324d 0%, #040e1a 80%) !important; }
-        body[data-neural-theme="arctic_frost"] #protected-website-ui [id$="-widget"],
-        body[data-neural-theme="arctic_frost"] #protected-website-ui #asset-terminal-card,
-        body[data-neural-theme="arctic_frost"] #protected-website-ui #hud-wrapper-tab {
-          background: rgba(7, 24, 42, var(--neural-glass-alpha, 0.86)) !important;
-          border-color: rgba(125, 211, 252, 0.8) !important;
-          box-shadow: 0 0 24px rgba(56, 189, 248, 0.28) !important;
-        }`
-    },
-    {
-      id: 'synthwave_80s',   name: '🌆 Synthwave 80s',  desc: 'Sunset Retro',    badge: '#fb923c', isBubbles: false,
-      css: `
-        body[data-neural-theme="synthwave_80s"] { background: linear-gradient(160deg, #240947 0%, #3d0e4c 52%, #3b150a 100%) !important; }
-        body[data-neural-theme="synthwave_80s"] #protected-website-ui [id$="-widget"],
-        body[data-neural-theme="synthwave_80s"] #protected-website-ui #asset-terminal-card,
-        body[data-neural-theme="synthwave_80s"] #protected-website-ui #hud-wrapper-tab {
-          background: rgba(26, 8, 38, var(--neural-glass-alpha, 0.86)) !important;
-          border-color: rgba(251, 146, 60, 0.75) !important;
-          box-shadow: 0 0 24px rgba(192, 38, 211, 0.28) !important;
-        }`
-    },
-    {
-      id: 'diamond_rgb',     name: '💎 Diamond RGB',    desc: 'Animated RGB',    badge: '#e879f9', isBubbles: false,
-      css: `
-        @keyframes neuralRgbBorder {
-          0%   { border-color: rgba(34, 211, 238, 0.9); box-shadow: 0 0 22px rgba(34, 211, 238, 0.35); }
-          33%  { border-color: rgba(192, 132, 252, 0.9); box-shadow: 0 0 22px rgba(192, 132, 252, 0.35); }
-          66%  { border-color: rgba(52, 211, 153, 0.9); box-shadow: 0 0 22px rgba(52, 211, 153, 0.35); }
-          100% { border-color: rgba(34, 211, 238, 0.9); box-shadow: 0 0 22px rgba(34, 211, 238, 0.35); }
+        body[data-neural-theme="crypto_bubbles"] {
+          background: radial-gradient(circle at 50% 35%, #07192b 0%, #02060c 100%) !important;
         }
-        body[data-neural-theme="diamond_rgb"] { background: radial-gradient(circle at 50% 40%, #121b36 0%, #03050a 80%) !important; }
-        body[data-neural-theme="diamond_rgb"] #protected-website-ui [id$="-widget"],
-        body[data-neural-theme="diamond_rgb"] #protected-website-ui #asset-terminal-card,
-        body[data-neural-theme="diamond_rgb"] #protected-website-ui #hud-wrapper-tab {
-          animation: neuralRgbBorder 4.5s linear infinite !important;
-        }`
+      `
+    },
+    {
+      id: 'bloomberg_pro',
+      name: '🟧 Bloomberg Pro',
+      desc: 'Amber Desk Terminal',
+      badge: '#ff8c00',
+      isBubbles: false,
+      css: `
+        body[data-neural-theme="bloomberg_pro"] {
+          background-color: #050505 !important;
+          background-image:
+            linear-gradient(rgba(255, 140, 0, 0.05) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255, 140, 0, 0.05) 1px, transparent 1px) !important;
+          background-size: 32px 32px !important;
+        }
+        body[data-neural-theme="bloomberg_pro"] #neural-canvas {
+          filter: hue-rotate(175deg) saturate(1.85) brightness(0.9) !important;
+        }
+        body[data-neural-theme="bloomberg_pro"] #protected-website-ui [id$="-widget"],
+        body[data-neural-theme="bloomberg_pro"] #protected-website-ui #asset-terminal-card,
+        body[data-neural-theme="bloomberg_pro"] #protected-website-ui #hud-wrapper-tab,
+        body[data-neural-theme="bloomberg_pro"] #coin-chart-modal > div,
+        body[data-neural-theme="bloomberg_pro"] #rr-calculator-modal > div {
+          background: rgba(10, 10, 10, var(--neural-glass-alpha, 0.94)) !important;
+          border: 1px solid rgba(255, 140, 0, 0.65) !important;
+          border-radius: 6px !important;
+          box-shadow: 0 0 24px rgba(255, 140, 0, 0.16) !important;
+        }
+        body[data-neural-theme="bloomberg_pro"] #protected-website-ui [class*="text-cyan"] {
+          color: #ffb347 !important;
+        }
+        body[data-neural-theme="bloomberg_pro"] #protected-website-ui [class*="border-cyan"] {
+          border-color: rgba(255, 140, 0, 0.45) !important;
+        }
+        body[data-neural-theme="bloomberg_pro"] #quick-fire-signal-btn,
+        body[data-neural-theme="bloomberg_pro"] #term-generate-signal-btn {
+          background: linear-gradient(90deg, #ff7b00, #ffb700) !important;
+          color: #050505 !important;
+          font-weight: 900 !important;
+        }
+      `
+    },
+    {
+      id: 'tradingview_dark',
+      name: '📊 TradingView Dark',
+      desc: 'Authentic TV Slate',
+      badge: '#2962ff',
+      isBubbles: false,
+      css: `
+        body[data-neural-theme="tradingview_dark"] {
+          background: #131722 !important;
+        }
+        body[data-neural-theme="tradingview_dark"] #neural-canvas {
+          filter: hue-rotate(25deg) saturate(1.15) brightness(0.75) !important;
+        }
+        body[data-neural-theme="tradingview_dark"] #protected-website-ui [id$="-widget"],
+        body[data-neural-theme="tradingview_dark"] #protected-website-ui #asset-terminal-card,
+        body[data-neural-theme="tradingview_dark"] #protected-website-ui #hud-wrapper-tab,
+        body[data-neural-theme="tradingview_dark"] #coin-chart-modal > div,
+        body[data-neural-theme="tradingview_dark"] #rr-calculator-modal > div {
+          background: rgba(30, 34, 45, var(--neural-glass-alpha, 0.94)) !important;
+          border: 1px solid #2a2e39 !important;
+          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55) !important;
+        }
+        body[data-neural-theme="tradingview_dark"] #protected-website-ui [class*="text-cyan"] {
+          color: #5b9cf6 !important;
+        }
+        body[data-neural-theme="tradingview_dark"] #quick-fire-signal-btn,
+        body[data-neural-theme="tradingview_dark"] #term-generate-signal-btn {
+          background: #2962ff !important;
+          color: #ffffff !important;
+          border-color: #2962ff !important;
+        }
+      `
+    },
+    {
+      id: 'apple_frost_light',
+      name: '☀️ VisionOS Light',
+      desc: 'Clean Bright Glass',
+      badge: '#38bdf8',
+      isBubbles: false,
+      css: `
+        body[data-neural-theme="apple_frost_light"] {
+          background: linear-gradient(135deg, #e2ecf7 0%, #f4f7fb 50%, #dce8f5 100%) !important;
+          color: #0f172a !important;
+        }
+        body[data-neural-theme="apple_frost_light"] #neural-canvas {
+          filter: invert(0.92) hue-rotate(180deg) saturate(1.4) opacity(0.38) !important;
+        }
+        body[data-neural-theme="apple_frost_light"] #protected-website-ui [id$="-widget"],
+        body[data-neural-theme="apple_frost_light"] #protected-website-ui #asset-terminal-card,
+        body[data-neural-theme="apple_frost_light"] #protected-website-ui #hud-wrapper-tab {
+          background: rgba(255, 255, 255, 0.80) !important;
+          backdrop-filter: blur(20px) saturate(180%) !important;
+          border: 1px solid rgba(15, 23, 42, 0.14) !important;
+          box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12) !important;
+          color: #0f172a !important;
+        }
+        body[data-neural-theme="apple_frost_light"] #protected-website-ui [id$="-widget"] *,
+        body[data-neural-theme="apple_frost_light"] #protected-website-ui #asset-terminal-card *,
+        body[data-neural-theme="apple_frost_light"] #protected-website-ui #hud-wrapper-tab * {
+          color: #0f172a !important;
+        }
+        body[data-neural-theme="apple_frost_light"] #protected-website-ui [class*="bg-slate-950"],
+        body[data-neural-theme="apple_frost_light"] #protected-website-ui [class*="bg-slate-900"] {
+          background: rgba(241, 245, 249, 0.92) !important;
+          border-color: rgba(15, 23, 42, 0.12) !important;
+        }
+        body[data-neural-theme="apple_frost_light"] #protected-website-ui [class*="text-emerald"] {
+          color: #059669 !important;
+        }
+        body[data-neural-theme="apple_frost_light"] #protected-website-ui [class*="text-rose"] {
+          color: #e11d48 !important;
+        }
+      `
+    },
+    {
+      id: 'phantom_oled',
+      name: '🖤 Phantom OLED',
+      desc: 'Pure Black & Silver',
+      badge: '#e2e8f0',
+      isBubbles: false,
+      css: `
+        body[data-neural-theme="phantom_oled"] {
+          background: #000000 !important;
+        }
+        body[data-neural-theme="phantom_oled"] #neural-canvas {
+          filter: grayscale(1) contrast(1.25) brightness(0.75) !important;
+        }
+        body[data-neural-theme="phantom_oled"] #protected-website-ui [id$="-widget"],
+        body[data-neural-theme="phantom_oled"] #protected-website-ui #asset-terminal-card,
+        body[data-neural-theme="phantom_oled"] #protected-website-ui #hud-wrapper-tab,
+        body[data-neural-theme="phantom_oled"] #coin-chart-modal > div,
+        body[data-neural-theme="phantom_oled"] #rr-calculator-modal > div {
+          background: rgba(8, 8, 10, var(--neural-glass-alpha, 0.94)) !important;
+          border: 1px solid rgba(255, 255, 255, 0.24) !important;
+          box-shadow: 0 0 24px rgba(255, 255, 255, 0.06) !important;
+        }
+        body[data-neural-theme="phantom_oled"] #protected-website-ui [class*="text-cyan"] {
+          color: #e2e8f0 !important;
+        }
+        body[data-neural-theme="phantom_oled"] #protected-website-ui [class*="border-cyan"] {
+          border-color: rgba(255, 255, 255, 0.22) !important;
+        }
+      `
+    },
+    {
+      id: 'wallst_quant',
+      name: '🏛️ Wall St. Quant',
+      desc: 'Obsidian & Emerald',
+      badge: '#10b981',
+      isBubbles: false,
+      css: `
+        body[data-neural-theme="wallst_quant"] {
+          background-color: #020b07 !important;
+          background-image:
+            radial-gradient(circle at 50% 0%, rgba(16, 185, 129, 0.18) 0%, transparent 60%),
+            linear-gradient(rgba(16, 185, 129, 0.05) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(16, 185, 129, 0.05) 1px, transparent 1px) !important;
+          background-size: 100% 100%, 40px 40px, 40px 40px !important;
+        }
+        body[data-neural-theme="wallst_quant"] #neural-canvas {
+          filter: hue-rotate(-45deg) saturate(1.6) brightness(0.92) !important;
+        }
+        body[data-neural-theme="wallst_quant"] #protected-website-ui [id$="-widget"],
+        body[data-neural-theme="wallst_quant"] #protected-website-ui #asset-terminal-card,
+        body[data-neural-theme="wallst_quant"] #protected-website-ui #hud-wrapper-tab,
+        body[data-neural-theme="wallst_quant"] #coin-chart-modal > div {
+          background: rgba(3, 20, 13, var(--neural-glass-alpha, 0.9)) !important;
+          border: 1px solid rgba(16, 185, 129, 0.6) !important;
+          box-shadow: 0 0 26px rgba(16, 185, 129, 0.20) !important;
+        }
+        body[data-neural-theme="wallst_quant"] #protected-website-ui [class*="text-cyan"] {
+          color: #6ee7b7 !important;
+        }
+      `
+    },
+    {
+      id: 'tokyo_drift',
+      name: '⛩️ Tokyo Drift',
+      desc: 'Cyber Pink & Indigo',
+      badge: '#f43f5e',
+      isBubbles: false,
+      css: `
+        body[data-neural-theme="tokyo_drift"] {
+          background-color: #090314 !important;
+          background-image:
+            radial-gradient(circle at 18% 18%, rgba(236, 72, 153, 0.28) 0%, transparent 48%),
+            radial-gradient(circle at 82% 82%, rgba(34, 211, 238, 0.22) 0%, transparent 50%),
+            linear-gradient(rgba(236, 72, 153, 0.05) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(34, 211, 238, 0.05) 1px, transparent 1px) !important;
+          background-size: 100% 100%, 100% 100%, 36px 36px, 36px 36px !important;
+        }
+        body[data-neural-theme="tokyo_drift"] #neural-canvas {
+          filter: hue-rotate(108deg) saturate(2.1) brightness(1.05) !important;
+        }
+        body[data-neural-theme="tokyo_drift"] #protected-website-ui [id$="-widget"],
+        body[data-neural-theme="tokyo_drift"] #protected-website-ui #asset-terminal-card,
+        body[data-neural-theme="tokyo_drift"] #protected-website-ui #hud-wrapper-tab,
+        body[data-neural-theme="tokyo_drift"] #coin-chart-modal > div {
+          background: rgba(18, 6, 34, var(--neural-glass-alpha, 0.88)) !important;
+          border: 1px solid rgba(236, 72, 153, 0.72) !important;
+          box-shadow: 0 0 28px rgba(236, 72, 153, 0.26), inset 0 0 14px rgba(34, 211, 238, 0.14) !important;
+        }
+        body[data-neural-theme="tokyo_drift"] #protected-website-ui [class*="text-cyan"] {
+          color: #f9a8d4 !important;
+        }
+      `
+    },
+    {
+      id: 'dubai_gold',
+      name: '👑 Dubai Gold',
+      desc: 'Luxury Black & Gold',
+      badge: '#fbbf24',
+      isBubbles: false,
+      css: `
+        body[data-neural-theme="dubai_gold"] {
+          background: radial-gradient(circle at 50% 15%, #2b1e06 0%, #090703 65%, #030201 100%) !important;
+        }
+        body[data-neural-theme="dubai_gold"] #neural-canvas {
+          filter: hue-rotate(192deg) saturate(1.75) brightness(0.95) !important;
+        }
+        body[data-neural-theme="dubai_gold"] #protected-website-ui [id$="-widget"],
+        body[data-neural-theme="dubai_gold"] #protected-website-ui #asset-terminal-card,
+        body[data-neural-theme="dubai_gold"] #protected-website-ui #hud-wrapper-tab,
+        body[data-neural-theme="dubai_gold"] #coin-chart-modal > div {
+          background: rgba(20, 15, 5, var(--neural-glass-alpha, 0.90)) !important;
+          border: 1px solid rgba(251, 191, 36, 0.68) !important;
+          box-shadow: 0 0 28px rgba(245, 158, 11, 0.24), inset 0 0 12px rgba(253, 224, 71, 0.10) !important;
+        }
+        body[data-neural-theme="dubai_gold"] #protected-website-ui [class*="text-cyan"] {
+          color: #fde68a !important;
+        }
+        body[data-neural-theme="dubai_gold"] #protected-website-ui [class*="border-cyan"] {
+          border-color: rgba(251, 191, 36, 0.45) !important;
+        }
+      `
+    },
+    {
+      id: 'eclipse_crimson',
+      name: '🌋 Eclipse Crimson',
+      desc: 'Volcanic Dark Red',
+      badge: '#ef4444',
+      isBubbles: false,
+      css: `
+        body[data-neural-theme="eclipse_crimson"] {
+          background: radial-gradient(circle at 50% 25%, #380710 0%, #0c0204 70%, #040102 100%) !important;
+        }
+        body[data-neural-theme="eclipse_crimson"] #neural-canvas {
+          filter: hue-rotate(148deg) saturate(2.2) brightness(0.92) !important;
+        }
+        body[data-neural-theme="eclipse_crimson"] #protected-website-ui [id$="-widget"],
+        body[data-neural-theme="eclipse_crimson"] #protected-website-ui #asset-terminal-card,
+        body[data-neural-theme="eclipse_crimson"] #protected-website-ui #hud-wrapper-tab,
+        body[data-neural-theme="eclipse_crimson"] #coin-chart-modal > div {
+          background: rgba(26, 5, 9, var(--neural-glass-alpha, 0.90)) !important;
+          border: 1px solid rgba(239, 68, 68, 0.72) !important;
+          box-shadow: 0 0 28px rgba(239, 68, 68, 0.28), inset 0 0 12px rgba(251, 146, 60, 0.12) !important;
+        }
+        body[data-neural-theme="eclipse_crimson"] #protected-website-ui [class*="text-cyan"] {
+          color: #fca5a5 !important;
+        }
+        body[data-neural-theme="eclipse_crimson"] #protected-website-ui [class*="border-cyan"] {
+          border-color: rgba(239, 68, 68, 0.45) !important;
+        }
+      `
     }
   ];
 
@@ -437,7 +620,7 @@
   }
 
   function applyAdminVisualSettings(s) {
-    document.documentElement.style.setProperty('--neural-glass-alpha', ((Number(s.glassOpacity) || 86) / 100).toFixed(2));
+    document.documentElement.style.setProperty('--neural-glass-alpha', ((Number(s.glassOpacity) || 88) / 100).toFixed(2));
     renderBroadcastBanner(s.announcement, s.announcementType);
     const levEl = document.getElementById('rr-leverage');
     if (levEl && s.defaultLeverage) levEl.value = s.defaultLeverage;
@@ -466,7 +649,6 @@
     const adminPanel = document.getElementById('admin-panel');
     if (!adminPanel) return;
 
-    // Clean up any legacy boxes from external scripts to avoid duplicates
     ['admin-theme-switcher-box', 'admin-themes-section', 'admin-pro-controls-box'].forEach(oldId => {
       const el = document.getElementById(oldId);
       if (el) el.remove();
@@ -494,7 +676,6 @@
         <span id="admin-hub-api-status" style="font-size:9px; font-weight:800; color:#34d399;">● LIVE</span>
       </div>
 
-      <!-- 3-Tab Admin Switcher -->
       <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:5px; margin-bottom:10px;">
         <button type="button" class="admin-hub-tab-btn" data-tab="themes"
           style="padding:6px 4px; border-radius:7px; font-size:9px; font-weight:800; cursor:pointer; border:1px solid #22d3ee; background:rgba(34,211,238,0.22); color:#ecfeff;">🎨 THEMES</button>
@@ -504,7 +685,7 @@
           style="padding:6px 4px; border-radius:7px; font-size:9px; font-weight:800; cursor:pointer; border:1px solid rgba(148,163,184,0.25); background:rgba(15,23,42,0.85); color:#94a3b8;">📢 SYSTEM</button>
       </div>
 
-      <!-- TAB 1: THEMES (10) -->
+      <!-- TAB 1: PRO THEMES (10) -->
       <div id="admin-hub-pane-themes" style="display:block;">
         <div style="font-size:9px; color:#94a3b8; margin-bottom:6px;">
           Active Theme: <span id="admin-hub-active-theme" style="color:#34d399; font-weight:800;">-</span>
@@ -524,7 +705,7 @@
 
         <div style="padding-top:8px; border-top:1px solid rgba(56,189,248,0.18); display:flex; flex-direction:column; gap:6px;">
           <div style="display:flex; justify-content:space-between; font-size:9px; color:#cbd5e1;">
-            <span>🪟 Glass Panel Opacity</span>
+            <span>🪟 Panel Opacity</span>
             <span id="admin-glass-opacity-val" style="color:#38bdf8; font-weight:800;">${s.glassOpacity}%</span>
           </div>
           <input id="admin-glass-opacity-slider" type="range" min="45" max="98" value="${s.glassOpacity}" style="width:100%; accent-color:#22d3ee;" />
@@ -628,7 +809,6 @@
       </div>
     `;
 
-    // Insert cleanly right after the header row of #admin-panel (so it's ALWAYS at the very top!)
     const headerRow = adminPanel.firstElementChild;
     if (headerRow && headerRow.nextElementSibling) {
       adminPanel.insertBefore(hub, headerRow.nextElementSibling);
@@ -636,7 +816,6 @@
       adminPanel.appendChild(hub);
     }
 
-    // Wire Admin Tab Switcher
     const panes = {
       themes:  hub.querySelector('#admin-hub-pane-themes'),
       signals: hub.querySelector('#admin-hub-pane-signals'),
@@ -657,7 +836,6 @@
       });
     });
 
-    // Wire Theme Buttons
     hub.querySelectorAll('.neural-theme-choice-btn').forEach(btn => {
       btn.addEventListener('click', () => applyTheme(btn.dataset.themeId));
     });
@@ -673,7 +851,6 @@
       saveAdminSettings({ showFloatingThemeBtn: e.target.checked });
     });
 
-    // Wire Signal Controls
     const pauseBtn = hub.querySelector('#admin-sig-pause-btn');
     pauseBtn.addEventListener('click', () => {
       const nextPaused = !loadAdminSettings().signalsPaused;
@@ -715,7 +892,6 @@
 
     hub.querySelector('#admin-force-signal-btn').addEventListener('click', () => generateNearEntrySignal());
 
-    // Wire System & Broadcast Controls
     const bcInput = hub.querySelector('#admin-bc-input');
     const bcType = hub.querySelector('#admin-bc-type');
     hub.querySelector('#admin-bc-set-btn').addEventListener('click', () => {
@@ -765,7 +941,6 @@
       window.showToast('Trade Logs & P&L Reset!', '🗑️');
     });
 
-    // Floating Admin-Only Quick Theme Button (opens Admin Panel right to THEMES tab)
     if (!document.getElementById('admin-quick-theme-pill')) {
       const pill = document.createElement('button');
       pill.id = 'admin-quick-theme-pill';
@@ -793,7 +968,7 @@
     applyAdminVisualSettings(s);
   }
 
-  // ---------------- LIVE REAL-TIME PRICE SYNC (DIRECT BINANCE VISION + BACKEND) ----------------
+  // ---------------- LIVE REAL-TIME PRICE SYNC ----------------
   async function syncLivePrices() {
     const priceMap = {};
     const fundingMap = {};
@@ -1274,7 +1449,7 @@
     loadAdminUsers();
   };
 
-  // ---------------- BOOTSTRAP EVERYTHING (CRASH-PROOF) ----------------
+  // ---------------- BOOTSTRAP EVERYTHING ----------------
   window.addEventListener('load', () => {
     injectThemeCss();
     initAuth();
