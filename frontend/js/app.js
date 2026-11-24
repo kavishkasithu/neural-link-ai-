@@ -1,6 +1,6 @@
 /**
- * MAIN FRONTEND APPLICATION CONTROLLER (FIXED & CRASH-PROOF)
- * Includes: Pair-Locked AI Signal Lifecycle (1 Active Signal per Pair until TP/SL Hit),
+ * MAIN FRONTEND APPLICATION CONTROLLER (COMPLETE MERGED VERSION)
+ * Includes: Pair-Locked AI Signal Lifecycle (Auto-switches to next unlocked coin on Generate),
  * Real-Time Auto TP/SL Hit Monitor & Auto Summary Panel,
  * Live TradingView Login Chart (BTC + Main Forex Pairs), Binance-API-Key Live Ticker,
  * Expanded Trader Sign Up Form, User Themes Panel, Market Type Badge + Green BUY / Red SELL Bars,
@@ -645,7 +645,6 @@
     overlay.style.paddingBottom = '56px';
     overlay.style.isolation = 'isolate';
 
-    // Raise ALL existing login screen children above the fixed TradingView background so clicks ALWAYS work
     Array.from(overlay.children).forEach(child => {
       child.style.position = child.style.position || 'relative';
       child.style.zIndex = '15';
@@ -1928,7 +1927,6 @@
     document.getElementById('term-signal-box')?.classList.toggle('hidden', !hasActiveSignal);
   }
 
-  // Helper: fetch 15m live klines with 3-source fallback
   async function fetchLive15mKlines(binSym) {
     const baseUrl = window.NEURAL_CONFIG?.API_BASE_URL || '';
     const urls = [
@@ -1956,7 +1954,7 @@
     return [];
   }
 
-  // ---------------- REAL-TIME 15M MARKET STRUCTURE SIGNAL ENGINE (PAIR-LOCKED) ----------------
+  // ---------------- REAL-TIME 15M MARKET STRUCTURE SIGNAL ENGINE (AUTO-SWITCH UNLOCKED COINS) ----------------
   async function generateNearEntrySignal(preferSelectedNode = false) {
     try {
       const settings = loadAdminSettings();
@@ -1971,30 +1969,30 @@
         return;
       }
 
+      // 1. Filter only unlocked coins (no active OPEN trade)
+      const unlockedNodes = nodes.filter(n => !isPairLocked(n.asset));
+      if (!unlockedNodes.length) {
+        window.showToast('🔒 All coins currently have OPEN signals waiting for TP/SL!', '⏳');
+        return;
+      }
+
       let chosen = null;
 
+      // 2. Use selected coin ONLY if it is currently unlocked
       if (preferSelectedNode) {
         const sel = nodes[window.NeuralCanvasEngine?.getSelectedIndex?.() || 0];
-        if (sel && sel.asset) {
-          if (isPairLocked(sel.asset)) {
-            const existing = getActiveSignalForPair(sel.asset);
-            window.showToast(`🔒 ${sel.asset.symbol} already has an OPEN ${existing.direction} signal! Waiting for TP/SL hit.`, '⏳');
-            renderSignalHeaderBar(existing, true);
-            return;
-          }
+        if (sel && sel.asset && !isPairLocked(sel.asset)) {
           chosen = sel;
         }
       }
 
+      // 3. If selected coin is already locked, automatically pick a different unlocked coin
       if (!chosen) {
-        const unlockedNodes = nodes.filter(n => !isPairLocked(n.asset));
-        if (!unlockedNodes.length) {
-          window.showToast('🔒 All pairs currently have OPEN signals waiting for TP/SL!', '⏳');
-          return;
-        }
-
         let pool = unlockedNodes.filter(n => !recentSymbols.includes(n.asset.symbol));
-        if (!pool.length) { recentSymbols = []; pool = unlockedNodes; }
+        if (!pool.length) {
+          recentSymbols = [];
+          pool = unlockedNodes;
+        }
         chosen = pool[0];
       }
 
@@ -2384,7 +2382,7 @@
     loadAdminUsers();
   };
 
-  // ---------------- INSTANT BOOTSTRAP (DOES NOT WAIT FOR SLOW EXTERNAL RESOURCES) ----------------
+  // ---------------- INSTANT BOOTSTRAP ----------------
   function bootstrapApp() {
     if (appBooted) return;
     appBooted = true;
