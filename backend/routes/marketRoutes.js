@@ -1,26 +1,41 @@
 const express = require('express');
 const router = express.Router();
 
-// ---------------- LIVE BINANCE FUTURES SCAN (PRICE + 24H CHANGE + FUNDING RATE) ----------------
+// ---------------- LIVE BINANCE + FUNDING SCAN (NO US GEO-BLOCK) ----------------
 router.get('/binance-scan', async (req, res) => {
   try {
-    const [tickerResp, fundingResp] = await Promise.all([
-      fetch('https://fapi.binance.com/fapi/v1/ticker/24hr'),
-      fetch('https://fapi.binance.com/fapi/v1/premiumIndex')
-    ]);
-
-    if (!tickerResp.ok || !fundingResp.ok) {
+    // data-api.binance.vision never returns 451 geo-block on US cloud servers
+    const tickerResp = await fetch('https://data-api.binance.vision/api/v3/ticker/24hr');
+    if (!tickerResp.ok) {
       return res.json({ ok: false, pairs: [] });
     }
-
     const tickers = await tickerResp.json();
-    const fundings = await fundingResp.json();
 
+    // Fetch live funding rates (try Binance Futures first, fallback to Bybit linear)
     const fundingMap = {};
-    if (Array.isArray(fundings)) {
-      fundings.forEach(f => {
-        fundingMap[f.symbol] = parseFloat(f.lastFundingRate) || 0;
-      });
+    try {
+      const fResp = await fetch('https://fapi.binance.com/fapi/v1/premiumIndex');
+      if (fResp.ok) {
+        const fData = await fResp.json();
+        if (Array.isArray(fData)) {
+          fData.forEach(f => { fundingMap[f.symbol] = parseFloat(f.lastFundingRate) || 0; });
+        }
+      }
+    } catch (_) {}
+
+    if (Object.keys(fundingMap).length === 0) {
+      try {
+        const bResp = await fetch('https://api.bybit.com/v5/market/tickers?category=linear');
+        if (bResp.ok) {
+          const bData = await bResp.json();
+          const list = bData?.result?.list || [];
+          list.forEach(item => {
+            if (item.symbol && item.fundingRate !== undefined) {
+              fundingMap[item.symbol] = parseFloat(item.fundingRate) || 0;
+            }
+          });
+        }
+      } catch (_) {}
     }
 
     const pairs = (Array.isArray(tickers) ? tickers : [])
@@ -38,14 +53,14 @@ router.get('/binance-scan', async (req, res) => {
   }
 });
 
-// ---------------- LIVE KLINES PROXY ----------------
+// ---------------- LIVE KLINES PROXY (NO US GEO-BLOCK) ----------------
 router.get('/klines', async (req, res) => {
   try {
     const symbol = String(req.query.symbol || 'BTCUSDT').toUpperCase().replace(/[^A-Z0-9]/g, '');
     const interval = String(req.query.interval || '15m');
-    const limit = Math.min(200, Math.max(10, parseInt(req.query.limit, 10) || 60));
+    const limit = Math.min(200, Math.max(10, parseInt(req.query.limit, 10) || 100));
 
-    const url = `https://api.binance.com/api/v3/klines?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&limit=${limit}`;
+    const url = `https://data-api.binance.vision/api/v3/klines?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&limit=${limit}`;
     const resp = await fetch(url);
     if (!resp.ok) return res.json({ ok: false, klines: [] });
 
@@ -64,7 +79,7 @@ router.get('/klines', async (req, res) => {
   }
 });
 
-// ---------------- LIVE RSS NEWS FEED (CRYPTO + FOREX + STOCKS — ZERO API KEY) ----------------
+// ---------------- LIVE RSS NEWS FEED (ZERO API KEY) ----------------
 let cachedRssNews = { ts: 0, items: [] };
 
 const RSS_SOURCES = [
@@ -90,7 +105,7 @@ function parseRssItems(xml, sourceName) {
   for (const block of matches.slice(0, 4)) {
     const rawTitle = (block.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || '';
     const title = rawTitle
-      .replace(/<!\[CDATA\[\vert{}\]\]>/g, '')
+      .replace(/<!\[CDATA\[|\]\]>/g, '')
       .replace(/<[^>]+>/g, '')
       .replace(/&amp;/g, '&')
       .replace(/&quot;/g, '"')
