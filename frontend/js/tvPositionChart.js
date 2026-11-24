@@ -1,6 +1,6 @@
 /**
- * REAL-TIME TRADINGVIEW CHART + LONG/SHORT POSITION OVERLAY
- * Uses real Binance klines & live price sync (no random fake spikes).
+ * REAL-TIME TRADINGVIEW CHART + LIVE WEBSOCKET CANDLES + LONG/SHORT POSITION BOX
+ * Streams live ticking candles directly from Binance Data Vision (zero fake candles).
  */
 window.TVPositionChart = (function () {
   let chart = null;
@@ -10,42 +10,60 @@ window.TVPositionChart = (function () {
   let resizeObserver = null;
   let currentSetup = null;
   let currentSymbol = 'BTC/USDT';
+  let currentNodeRef = null;
   let activeTimeframe = '15m';
   let rafId = null;
-  let livePriceTimer = null;
+  let liveWs = null;
+  let pollTimer = null;
 
   const TIMEFRAMES = [
-    { label: '1m', value: '1m', sec: 60 },
-    { label: '5m', value: '5m', sec: 300 },
-    { label: '15m', value: '15m', sec: 900 },
-    { label: '1H', value: '1h', sec: 3600 },
-    { label: '4H', value: '4h', sec: 14400 },
-    { label: '1D', value: '1d', sec: 86400 }
+    { label: '1m', value: '1m' },
+    { label: '5m', value: '5m' },
+    { label: '15m', value: '15m' },
+    { label: '1H', value: '1h' },
+    { label: '4H', value: '4h' },
+    { label: '1D', value: '1d' }
   ];
 
   function toBinanceSymbol(symbol) {
-    const clean = String(symbol || 'BTCUSDT').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const raw = String(symbol || 'BTCUSDT').toUpperCase().trim();
+    if (raw === 'ETH' || raw.startsWith('ETH/') || raw.startsWith('ETH-')) return 'ETHUSDT';
+    const clean = raw.replace(/[^A-Z0-9]/g, '');
     if (clean.includes('XAU')) return 'PAXGUSDT';
     if (clean.includes('EURUSD')) return 'EURUSDT';
     if (clean.includes('NAS100') || clean.includes('US30')) return 'BTCUSDT';
-    if (clean === 'ETH' || clean === 'ETHUSD') return 'ETHUSDT';
     return clean.endsWith('USDT') ? clean : `${clean.replace(/USD$/, '')}USDT`;
   }
 
-  async function fetchRealCandles(symbol, interval = '15m', anchorPrice = null) {
-    const binSym = toBinanceSymbol(symbol);
-    try {
-      const baseUrl = window.NEURAL_CONFIG?.API_BASE_URL || '';
-      const proxyUrl = baseUrl
-        ? `${baseUrl}/api/market/klines?symbol=${encodeURIComponent(binSym)}&interval=${encodeURIComponent(interval)}&limit=90`
-        : `https://api.binance.com/api/v3/klines?symbol=${encodeURIComponent(binSym)}&interval=${encodeURIComponent(interval)}&limit=90`;
+  function getPriceFormat(price) {
+    const p = Number(price) || 1;
+    if (p < 0.001) return { type: 'price', precision: 7, minMove: 0.0000001 };
+    if (p < 0.1)   return { type: 'price', precision: 5, minMove: 0.00001 };
+    if (p < 10)    return { type: 'price', precision: 4, minMove: 0.0001 };
+    if (p < 1000)  return { type: 'price', precision: 2, minMove: 0.01 };
+    return { type: 'price', precision: 2, minMove: 0.01 };
+  }
 
-      const res = await fetch(proxyUrl);
-      if (res.ok) {
+  async function fetchRealCandles(symbol, interval = '15m', limit = 100) {
+    const binSym = toBinanceSymbol(symbol);
+    const urls = [
+      `https://data-api.binance.vision/api/v3/klines?symbol=${encodeURIComponent(binSym)}&interval=${encodeURIComponent(interval)}&limit=${limit}`,
+      `https://api.binance.com/api/v3/klines?symbol=${encodeURIComponent(binSym)}&interval=${encodeURIComponent(interval)}&limit=${limit}`
+    ];
+
+    const baseUrl = window.NEURAL_CONFIG?.API_BASE_URL || '';
+    if (baseUrl) {
+      urls.push(`${baseUrl}/api/market/klines?symbol=${encodeURIComponent(binSym)}&interval=${encodeURIComponent(interval)}&limit=${limit}`);
+    }
+
+    for (const url of urls) {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) continue;
         const json = await res.json();
-        const list = Array.isArray(json) ? json : (json.klines || []);
-        if (Array.isArray(list) && list.length >= 10) {
-          return list.map(k => Array.isArray(k)
+        const raw = Array.isArray(json) ? json : (json.klines || []);
+        if (Array.isArray(raw) && raw.length > 0) {
+          return raw.map(k => Array.isArray(k)
             ? {
                 time: Math.floor(k[0] / 1000),
                 open: parseFloat(k[1]),
@@ -62,39 +80,71 @@ window.TVPositionChart = (function () {
               }
           );
         }
-      }
-    } catch (_) {}
-
-    // Deterministic smooth fallback anchored to real live price (no random spike)
-    const tfObj = TIMEFRAMES.find(t => t.value === interval) || TIMEFRAMES[2];
-    const now = Math.floor(Date.now() / 1000);
-    const endPrice = Number(anchorPrice) > 0 ? Number(anchorPrice) : 100;
-    const candles = [];
-    let p = endPrice * 0.995;
-    const step = (endPrice - p) / 89;
-
-    for (let i = 89; i >= 0; i--) {
-      const wave = Math.sin((89 - i) * 0.25) * (endPrice * 0.0012);
-      const open = i === 89 ? p : candles[candles.length - 1].close;
-      const close = i === 0 ? endPrice : open + step + wave;
-      const high = Math.max(open, close) + endPrice * 0.0006;
-      const low = Math.min(open, close) - endPrice * 0.0006;
-      candles.push({ time: now - i * tfObj.sec, open, high, low, close });
+      } catch (_) {}
     }
-    return candles;
+    return [];
   }
 
-  async function fetchRealTickerPrice(symbol) {
-    const binSym = toBinanceSymbol(symbol);
+  function stopLiveFeeds() {
+    if (liveWs) {
+      try { liveWs.close(); } catch (_) {}
+      liveWs = null;
+    }
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
+
+  function syncHeaderAndNodePrice(livePrice) {
+    if (!livePrice || Number.isNaN(livePrice)) return;
+    const priceEl = document.getElementById('chart-modal-price');
+    if (priceEl && window.formatPrice) {
+      priceEl.textContent = window.formatPrice(livePrice);
+    }
+    if (currentNodeRef && currentNodeRef.asset) {
+      currentNodeRef.asset.price = livePrice;
+    }
+  }
+
+  function startLiveCandleStream(symbol, interval) {
+    stopLiveFeeds();
+    const binSym = toBinanceSymbol(symbol).toLowerCase();
+
+    // 1. Real-time WebSocket stream (updates candle every tick)
     try {
-      const res = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${encodeURIComponent(binSym)}`);
-      if (res.ok) {
-        const d = await res.json();
-        const price = parseFloat(d.price);
-        if (!Number.isNaN(price) && price > 0) return price;
-      }
+      liveWs = new WebSocket(`wss://data-stream.binance.vision/ws/${binSym}@kline_${interval}`);
+      liveWs.onmessage = (evt) => {
+        try {
+          const msg = JSON.parse(evt.data);
+          const k = msg.k;
+          if (!k || !candleSeries) return;
+          const liveCandle = {
+            time: Math.floor(k.t / 1000),
+            open: parseFloat(k.o),
+            high: parseFloat(k.h),
+            low: parseFloat(k.l),
+            close: parseFloat(k.c)
+          };
+          candleSeries.update(liveCandle);
+          syncHeaderAndNodePrice(liveCandle.close);
+        } catch (_) {}
+      };
     } catch (_) {}
-    return null;
+
+    // 2. 3-second REST backup poll so chart ALWAYS updates live even if WebSocket drops
+    pollTimer = setInterval(async () => {
+      const modal = document.getElementById('coin-chart-modal');
+      if (!modal || modal.classList.contains('hidden')) {
+        stopLiveFeeds();
+        return;
+      }
+      const latest = await fetchRealCandles(symbol, interval, 2);
+      if (latest.length && candleSeries) {
+        latest.forEach(c => candleSeries.update(c));
+        syncHeaderAndNodePrice(latest[latest.length - 1].close);
+      }
+    }, 3000);
   }
 
   function drawPositionBox() {
@@ -124,7 +174,6 @@ window.TVPositionChart = (function () {
     const boxRight = Math.floor(rect.width - 74);
     const boxW = Math.max(90, boxRight - boxLeft);
 
-    // Profit Zone Box (Entry <-> TP)
     const profitTop = Math.min(yEntry, yTp);
     const profitH = Math.max(2, Math.abs(yTp - yEntry));
     overlayCtx.fillStyle = 'rgba(0, 230, 118, 0.18)';
@@ -133,7 +182,6 @@ window.TVPositionChart = (function () {
     overlayCtx.lineWidth = 1;
     overlayCtx.strokeRect(boxLeft, profitTop, boxW, profitH);
 
-    // Stop Loss Zone Box (Entry <-> SL)
     const lossTop = Math.min(yEntry, ySl);
     const lossH = Math.max(2, Math.abs(ySl - yEntry));
     overlayCtx.fillStyle = 'rgba(255, 61, 90, 0.20)';
@@ -142,7 +190,6 @@ window.TVPositionChart = (function () {
     overlayCtx.lineWidth = 1;
     overlayCtx.strokeRect(boxLeft, lossTop, boxW, lossH);
 
-    // Entry Line
     overlayCtx.beginPath();
     overlayCtx.moveTo(boxLeft, yEntry);
     overlayCtx.lineTo(boxRight, yEntry);
@@ -150,7 +197,6 @@ window.TVPositionChart = (function () {
     overlayCtx.lineWidth = 1.5;
     overlayCtx.stroke();
 
-    // R:R Badge
     const risk = Math.abs(entry - sl) || 1;
     const reward = Math.abs(tp - entry);
     const rr = (reward / risk).toFixed(2);
@@ -190,9 +236,9 @@ window.TVPositionChart = (function () {
     const bar = document.createElement('div');
     bar.style.cssText = [
       'position:absolute', 'top:8px', 'left:8px', 'z-index:10',
-      'display:flex', 'gap:4px', 'padding:3px',
-      'background:rgba(6,12,20,0.85)', 'backdrop-filter:blur(8px)',
-      'border:1px solid rgba(56,189,248,0.28)', 'border-radius:7px'
+      'display:flex', 'align-items:center', 'gap:4px', 'padding:3px',
+      'background:rgba(6,12,20,0.88)', 'backdrop-filter:blur(8px)',
+      'border:1px solid rgba(56,189,248,0.3)', 'border-radius:7px'
     ].join(';');
 
     const updateButtons = () => {
@@ -200,7 +246,7 @@ window.TVPositionChart = (function () {
         const isActive = btn.dataset.tf === activeTimeframe;
         btn.style.background = isActive ? 'rgba(56,189,248,0.28)' : 'transparent';
         btn.style.color = isActive ? '#38bdf8' : '#94a3b8';
-        btn.style.borderColor = isActive ? 'rgba(56,189,248,0.7)' : 'transparent';
+        btn.style.borderColor = isActive ? 'rgba(56,189,248,0.75)' : 'transparent';
       });
     };
 
@@ -219,35 +265,31 @@ window.TVPositionChart = (function () {
         if (activeTimeframe === tf.value || !candleSeries) return;
         activeTimeframe = tf.value;
         updateButtons();
-        const candles = await fetchRealCandles(currentSymbol, activeTimeframe, currentSetup?.entry);
+        const candles = await fetchRealCandles(currentSymbol, activeTimeframe, 100);
         if (candleSeries && candles.length) {
           candleSeries.setData(candles);
+          syncHeaderAndNodePrice(candles[candles.length - 1].close);
           chart.timeScale().fitContent();
           drawPositionBox();
+          startLiveCandleStream(currentSymbol, activeTimeframe);
         }
       });
 
       bar.appendChild(btn);
     });
 
+    const liveDot = document.createElement('span');
+    liveDot.textContent = '● LIVE';
+    liveDot.style.cssText = 'font-family:"JetBrains Mono",monospace; font-size:9px; font-weight:800; color:#00e676; padding:0 6px;';
+    bar.appendChild(liveDot);
+
     updateButtons();
     mount.appendChild(bar);
   }
 
-  function startRealTimePricePolling(symbol) {
-    if (livePriceTimer) clearInterval(livePriceTimer);
-    livePriceTimer = setInterval(async () => {
-      const modal = document.getElementById('coin-chart-modal');
-      if (!modal || modal.classList.contains('hidden')) {
-        clearInterval(livePriceTimer);
-        return;
-      }
-      const liveP = await fetchRealTickerPrice(symbol);
-      if (liveP && candleSeries) {
-        const priceEl = document.getElementById('chart-modal-price');
-        if (priceEl && window.formatPrice) priceEl.textContent = window.formatPrice(liveP);
-      }
-    }, 5000);
+  function close() {
+    stopLiveFeeds();
+    if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
   }
 
   async function renderIntoModal(targetCanvasOrContainer, setup) {
@@ -267,40 +309,53 @@ window.TVPositionChart = (function () {
       mount.style.cssText = 'width:100%; height:100%; min-height:280px; position:relative; border-radius:10px; overflow:hidden;';
       parent.appendChild(mount);
     }
-    mount.innerHTML = '';
+    mount.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#38bdf8;font-family:monospace;font-size:12px;">Loading Real-Time Binance Candles...</div>';
 
-    if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
-    if (livePriceTimer) { clearInterval(livePriceTimer); livePriceTimer = null; }
+    close();
     if (chart) { try { chart.remove(); } catch (_) {} chart = null; }
 
     currentSymbol = setup.symbol || 'BTC/USDT';
+    currentNodeRef = setup.nodeRef || null;
     activeTimeframe = setup.timeframe || activeTimeframe || '15m';
 
-    const width = mount.clientWidth || 720;
-    const height = mount.clientHeight || 300;
-
-    const realTicker = await fetchRealTickerPrice(currentSymbol);
-    const candles = await fetchRealCandles(currentSymbol, activeTimeframe, realTicker || setup.entry);
-    const livePrice = realTicker || (candles.length ? candles[candles.length - 1].close : Number(setup.entry));
-
-    const priceEl = document.getElementById('chart-modal-price');
-    if (priceEl && window.formatPrice && livePrice > 0) {
-      priceEl.textContent = window.formatPrice(livePrice);
+    const candles = await fetchRealCandles(currentSymbol, activeTimeframe, 100);
+    if (!candles.length) {
+      mount.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#fb7185;font-family:monospace;font-size:12px;">Unable to load live Binance candles. Check internet connection.</div>';
+      return;
     }
 
-    let entry = Number(setup.entry) > 0 ? Number(setup.entry) : livePrice;
-    let tp = Number(setup.tp) > 0 ? Number(setup.tp) : null;
-    let sl = Number(setup.sl) > 0 ? Number(setup.sl) : null;
-    const isLong = setup.isLong !== undefined ? setup.isLong : (tp ? tp > livePrice : true);
+    mount.innerHTML = '';
+    const livePrice = candles[candles.length - 1].close;
+    syncHeaderAndNodePrice(livePrice);
 
-    // Keep Entry/TP/SL anchored to real live price
-    if (!tp || !sl || Math.abs(entry - livePrice) / livePrice > 0.08) {
+    // Derive real structural levels from live candles if passed setup is stale
+    const recent = candles.slice(-24);
+    const swingHigh = Math.max(...recent.map(c => c.high));
+    const swingLow  = Math.min(...recent.map(c => c.low));
+
+    let entry = Number(setup.entry);
+    let tp = Number(setup.tp);
+    let sl = Number(setup.sl);
+    const isLong = setup.isLong !== undefined ? setup.isLong : true;
+
+    const isStale = !entry || !tp || !sl || Math.abs(entry - livePrice) / livePrice > 0.05;
+    if (isStale) {
       entry = livePrice;
-      tp = isLong ? livePrice * 1.015 : livePrice * 0.985;
-      sl = isLong ? livePrice * 0.994 : livePrice * 1.006;
+      if (isLong) {
+        sl = Math.min(swingLow * 0.999, livePrice * 0.994);
+        const risk = Math.max(livePrice * 0.0025, entry - sl);
+        tp = Math.max(swingHigh, entry + risk * 2.0);
+      } else {
+        sl = Math.max(swingHigh * 1.001, livePrice * 1.006);
+        const risk = Math.max(livePrice * 0.0025, sl - entry);
+        tp = Math.min(swingLow, entry - risk * 2.0);
+      }
     }
 
     currentSetup = { entry, tp, sl, isLong };
+
+    const width = mount.clientWidth || 720;
+    const height = mount.clientHeight || 300;
 
     chart = window.LightweightCharts.createChart(mount, {
       width,
@@ -334,6 +389,7 @@ window.TVPositionChart = (function () {
       borderDownColor: '#ff3d5a',
       wickUpColor: '#00e676',
       wickDownColor: '#ff3d5a',
+      priceFormat: getPriceFormat(livePrice),
       autoscaleInfoProvider: (original) => {
         const res = original();
         if (res && res.priceRange) {
@@ -380,7 +436,7 @@ window.TVPositionChart = (function () {
 
     chart.timeScale().fitContent();
     startOverlaySync();
-    startRealTimePricePolling(currentSymbol);
+    startLiveCandleStream(currentSymbol, activeTimeframe);
 
     if (resizeObserver) resizeObserver.disconnect();
     resizeObserver = new ResizeObserver(() => {
@@ -391,5 +447,5 @@ window.TVPositionChart = (function () {
     resizeObserver.observe(mount);
   }
 
-  return { renderIntoModal };
+  return { renderIntoModal, close };
 })();
